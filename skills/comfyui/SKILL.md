@@ -7,7 +7,7 @@ description: Run and manage ComfyUI generations through the comfy-mcp server and
 
 ## Precedence
 
-If the current project has its own ComfyUI rules (a `CLAUDE.md`, a run wrapper such as UWNYC's
+If the current project has its own ComfyUI rules (a `CLAUDE.md`, a run wrapper such as a project's
 `monitor/run.py`, fixed output folders), **those win**. Use this skill for the underlying mechanics
 and for projects with no such rules.
 
@@ -110,7 +110,7 @@ $CN path <dir-or-files> [--recursive] --dry-run  # files already on disk (wrappe
 4. **comfy4 / comfy5:** `$CN outputs <prompt_id> --server comfy4 --copy-to <local dir>` downloads
    through the tunnel under the clean name. The copy on the server (and its NAS mirror) keeps the
    underscore unless the graph saved with `Image Save`, so use `$CN graph --server comfy4` first.
-5. **Project wrappers** (for example UWNYC's `monitor/run.py`): the wrapper still launches the run,
+5. **Project wrappers** (for example a project's `monitor/run.py` from the comfyui-monitor template): the wrapper still launches the run,
    but the graph it launches follows rule 1, and if its outputs still carry the underscore, fix the
    graph builder rather than renaming files the wrapper has already indexed. Tell the user when a
    wrapper needs that change.

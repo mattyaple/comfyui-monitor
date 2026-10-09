@@ -7,7 +7,7 @@ monitor/selects_index.json: {"generated", "output_root", "tags": {"Yellow": "sel
 "status": select|rejected|other, "run": <run id from _sources.jsonl when known>}]}, only files that carry a tag.
 
   python3 tools/selects_index.py                    # rewrite the index and list every tagged file
-  python3 tools/selects_index.py --group Page-2b    # only that group (a shot, a reference subject, a test folder)
+  python3 tools/selects_index.py --group SC010      # only that group (a shot, a reference subject, a test folder)
   python3 tools/selects_index.py --selects          # only the selects
 
 Tags are read through `mdls` (Spotlight), which also sees tags Finder has just written; a raw xattr read can lag.
