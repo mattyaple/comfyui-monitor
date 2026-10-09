@@ -1,0 +1,23 @@
+# Monitor runtime state (never commit these in a project either)
+monitor/cache/
+monitor/server.log
+monitor/*.log
+monitor/runs/*.json
+monitor/runs/.*.reserved
+monitor/runs/_removed/
+monitor/expenses.json
+monitor/export_spec.json
+exports/*
+!exports/.gitkeep
+
+# A project's own files: keep the template clean
+monitor/project.json
+monitor/servers.json
+
+__pycache__/
+*.pyc
+.DS_Store
+Icon?
+monitor/costs_imports/
+monitor/check_smoke.log
+monitor/selects_index.json

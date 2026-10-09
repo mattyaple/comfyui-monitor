@@ -1,0 +1,26 @@
+{
+  "local": {
+    "kind": "local",
+    "port": 8188,
+    "output_root": "~/ComfyUI/output/PROJ",
+    "output_prefix": "PROJ/",
+    "engines": ["api", "flux2", "open_edit", "other"],
+    "notes": "The ComfyUI on this machine. output_root = the project's subtree of ComfyUI's output folder; output_prefix = what graphs put in front of their save path."
+  },
+  "_example_remote": {
+    "kind": "aws",
+    "instance_name": "ComfyUI-004",
+    "region": "us-east-2",
+    "key": "~/.ssh/comfy_key.pem",
+    "user": "ubuntu",
+    "port": 8194,
+    "remote_port": 8188,
+    "output_root": "/Volumes/NAS/Outputs/comfy004",
+    "output_prefix": "",
+    "engines": ["flux2", "open_edit"],
+    "api_models": [],
+    "auto_select": true,
+    "reservation": {"active": false, "reason": ""},
+    "notes": "Rename to the server's alias (comfy4) or delete. kind aws = looked up by EC2 Name tag; kind ssh = fixed host (add \"host\"). port = local tunnel port. output_root = a local mirror of the server's output folder (NAS), used when the tunnel is down."
+  }
+}

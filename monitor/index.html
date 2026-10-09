@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run Monitor</title>
+<style>
+  :root { --bg:#111418; --panel:#1a1f26; --line:#2a313b; --text:#e6e9ee; --muted:#8b95a3; --accent:#4cc2ff; --ok:#3ddc84; --warn:#ffb340; --err:#ff5c5c; --gold:#ffcf33; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--panel); border-bottom:1px solid var(--line); padding:10px 18px; display:flex; align-items:center; gap:8px 12px; flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.2px; white-space:nowrap; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--err); display:inline-block; margin-right:6px; }
+  .dot.on { background:var(--ok); }
+  .spacer { flex:1; }
+  .small { color:var(--muted); font-size:12px; }
+  header label { color:var(--muted); font-size:12px; display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; }
+  header label[hidden] { display:none; }
+  header label:hover { color:var(--text); }
+  header input[type=checkbox] { margin:0; padding:0; accent-color:var(--accent); }
+  header #optSelOnly { accent-color:var(--gold); } header #optHideNg { accent-color:var(--err); }
+  #updated { white-space:nowrap; }
+  #runGroup { max-width:140px; }
+  #srvDots { display:flex; flex-wrap:wrap; gap:2px 12px; } #srvDots > span { white-space:nowrap; }
+  select, input[type=text], input[type=number], input[type=date], textarea { background:#0e1216; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:4px 8px; font-size:12px; font-family:inherit; }
+  textarea { font-family:ui-monospace, Menlo, monospace; font-size:11.5px; line-height:1.4; width:100%; }
+  main { padding:16px 18px 60px; max-width:1900px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:16px; }
+  .panel h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  #live h2 { margin:0 0 8px; }
+  .livecard { display:flex; gap:14px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
+  .livecard:first-of-type { border-top:none; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .pill.running { color:#08111a; background:var(--accent); border-color:var(--accent); }
+  .pill.queued { color:#1a1200; background:var(--warn); border-color:var(--warn); }
+  .pill.done { color:var(--ok); border-color:var(--ok); }
+  .pill.error { color:var(--err); border-color:var(--err); }
+  .pill.cat { color:#0b0e12; background:var(--c, #8b95a3); border-color:var(--c, #8b95a3); }
+  .pill.cat.muted { color:var(--muted); background:transparent; border-color:var(--line); }
+  .pill.cat.dashed { color:var(--muted); background:transparent; border-style:dashed; }
+  .pill.sel { color:#1a1200; background:var(--gold); border-color:var(--gold); }
+  .pill.ngp { color:var(--err); border-color:var(--err); }
+  .pill.cost { color:var(--ok); border-color:var(--ok); }
+  .bar { height:6px; background:#0e1216; border-radius:3px; overflow:hidden; flex:1; min-width:120px; }
+  .bar > i { display:block; height:100%; background:var(--accent); width:0; transition:width .6s; }
+  .bar.indet > i { width:35%; animation:slide 1.2s infinite linear; }
+  @keyframes slide { from { transform:translateX(-100%);} to { transform:translateX(300%);} }
+  .run { background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:16px; overflow:hidden; }
+  .run > .head { display:flex; align-items:center; gap:10px; padding:9px 14px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .run.collapsed > .head { border-bottom:none; }
+  .run > .head > * { flex:0 0 auto; white-space:nowrap; }
+  .run > .head h3 { margin:0; font-size:14px; font-weight:600; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .run > .head .grp { max-width:230px; overflow:hidden; text-overflow:ellipsis; }
+  .run > .head .spacer { flex:1 0 0; }
+  .run > .head .meta { color:var(--muted); font-size:12px; }
+  .ftitle { font-size:13px; font-weight:600; margin:0 0 10px; overflow-wrap:anywhere; }
+  .body { display:grid; grid-template-columns: minmax(300px, 34%) 1fr; gap:0; }
+  .details { padding:12px 14px; min-width:0; align-self:start; }
+  .kv { display:grid; grid-template-columns: 82px 1fr; gap:4px 10px; font-size:12px; margin-bottom:10px; }
+  .kv b { color:var(--muted); font-weight:500; }
+  .kv code { font-family: ui-monospace, Menlo, monospace; font-size:11.5px; color:var(--text); word-break:break-all; }
+  .refs { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; }
+  .refs a { display:block; position:relative; }
+  .refs img { height:64px; border-radius:6px; border:1px solid var(--line); display:block; }
+  .refs .n { position:absolute; left:3px; top:3px; background:rgba(0,0,0,.65); color:#fff; font-size:10px; padding:1px 5px; border-radius:4px; }
+  .refs .old { position:absolute; right:3px; top:3px; background:#b45309; color:#fff; font-size:9px; padding:1px 5px; border-radius:4px; }
+  .refs .cap { font-size:10px; color:var(--muted); max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .refs .cap b { color:var(--text); font-weight:600; }
+  .prompt { font-size:12px; color:#c9d1dc; white-space:pre-wrap; max-height:120px; overflow:hidden; position:relative; }
+  .prompt.open { max-height:none; }
+  .prompt:not(.open)::after { content:""; position:absolute; left:0; right:0; bottom:0; height:40px; background:linear-gradient(transparent, var(--panel)); }
+  .toggle { font-size:11px; color:var(--accent); cursor:pointer; margin-top:4px; display:inline-block; }
+  .results { padding:12px 14px; display:flex; flex-wrap:wrap; gap:10px; align-content:flex-start; border-left:1px solid var(--line); min-width:0; }
+  .results a, .results .placeholder { flex:0 0 auto; width:220px; }
+  .results a { display:block; position:relative; }
+  .results img { width:100%; aspect-ratio:var(--ar, 16/9); object-fit:contain; border-radius:8px; border:1px solid var(--line); background:#0e1216; display:block; }
+  .results .cap { position:absolute; left:6px; bottom:6px; max-width:calc(100% - 12px); display:flex; white-space:nowrap; background:rgba(0,0,0,.7); color:#fff; font-size:11px; padding:2px 7px; border-radius:5px; font-family:ui-monospace, Menlo, monospace; }
+  .placeholder { aspect-ratio:var(--ar, 16/9); text-align:center; overflow:hidden; border:1px dashed var(--line); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; }
+  .err { color:var(--err); font-size:12px; white-space:pre-wrap; padding:8px 14px; }
+  .collapsed .body { display:none; }
+  .btn { font-size:11px; padding:3px 10px; border-radius:6px; border:1px solid var(--accent); color:var(--accent); background:transparent; cursor:pointer; white-space:nowrap; font-family:inherit; }
+  .btn:hover { background:var(--accent); color:#08111a; }
+  .btn[disabled] { opacity:.35; cursor:default; }
+  .btn[disabled]:hover { background:transparent; color:var(--accent); }
+  .btn.primary { background:var(--accent); color:#08111a; font-size:12px; padding:6px 14px; }
+  .btn.danger { border-color:var(--err); color:var(--err); } .btn.danger:hover { background:var(--err); color:#fff; }
+  .btn.quiet { border-color:var(--line); color:var(--muted); } .btn.quiet:hover { background:#243040; color:var(--text); }
+  #toast { position:fixed; right:18px; bottom:18px; background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--accent); color:var(--text); padding:10px 14px; border-radius:8px; font-size:12px; display:none; z-index:30; max-width:460px; }
+  #toast.bad { border-left-color:var(--err); }
+  .tabs { display:flex; gap:4px; }
+  .tabs a { color:var(--muted); text-decoration:none; font-size:13px; padding:4px 10px; border-radius:6px; cursor:pointer; }
+  .tabs a.on { color:var(--text); background:#0e1216; border:1px solid var(--line); }
+  .tabs a .n { font-size:10px; font-weight:600; background:var(--accent); color:#08111a; border-radius:999px; padding:0 6px; margin-left:5px; }
+  .tabs a .n[hidden] { display:none; }
+  .events { font-size:11px; color:var(--muted); font-family:ui-monospace, Menlo, monospace; margin-top:8px; max-height:90px; overflow:auto; }
+  .results a, .ogrid a { cursor:zoom-in; }
+  .results a.selected img, .ogrid a.selected img { border-color:var(--gold); box-shadow:0 0 0 3px var(--gold); }
+  .results a.ng img, .ogrid a.ng img { border-color:var(--err); box-shadow:0 0 0 2px var(--err); opacity:.45; }
+  .results a.ng:hover img, .ogrid a.ng:hover img { opacity:1; }
+  .head .div { width:1px; height:20px; background:#3a4655; margin:0 4px 0 6px; flex:0 0 auto; }
+  .grp { font-weight:650; font-size:13.5px; color:var(--text); background:#0e1216; border:1px solid #3a4655; border-radius:6px; padding:2px 10px; white-space:nowrap; letter-spacing:.2px; }
+  /* lightbox */
+  #lb { position:fixed; inset:0; z-index:20; background:rgba(5,7,9,.96); display:flex; flex-direction:column; }
+  #lb[hidden] { display:none; }
+  #lb .top { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--line); }
+  #lb .top .t { font-size:13px; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  #lb .top .t .ln { display:flex; align-items:center; gap:6px; min-width:0; }
+  #lb .top .t .ln > :not(.cp) { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  #lb .top .t b { font-family:ui-monospace, Menlo, monospace; }
+  #lb .top .t code { font-family:ui-monospace, Menlo, monospace; font-size:11.5px; color:var(--muted); }
+  .cp { flex:0 0 auto; width:22px; height:22px; padding:0; border:1px solid var(--line); border-radius:5px; background:transparent; color:var(--muted); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+  .cp:hover { color:var(--accent); border-color:var(--accent); }
+  .cp.ok { color:var(--ok); border-color:var(--ok); }
+  .cp svg { width:13px; height:13px; }
+  #lb .stage { flex:1; position:relative; display:flex; align-items:center; justify-content:center; min-height:0; padding:12px 60px; }
+  #lb .stage img { max-width:100%; max-height:100%; object-fit:contain; border-radius:6px; box-shadow:0 8px 40px rgba(0,0,0,.6); user-select:none; -webkit-user-drag:none; }
+  #lb .stage.sel img { outline:4px solid var(--gold); }
+  #lb .stage.ng img { outline:4px solid var(--err); }
+  #lb .stage.cmp img { outline:4px solid var(--accent); }
+  #lb .top .pill.cmp { color:var(--accent); border-color:var(--accent); cursor:default; }
+  #lb .top .pill.cmp.on { color:#08111a; background:var(--accent); }
+  #lbInfo .refs a { cursor:pointer; }
+  #lbInfo .refs a.cmpsel img { outline:3px solid var(--accent); outline-offset:1px; }
+  #lbInfo .refs a.cmpsel::after { content:"⇄"; position:absolute; left:24px; top:3px; background:var(--accent); color:#08111a; font-size:10px; font-weight:700; padding:1px 5px; border-radius:4px; }
+  #lb .nav { position:absolute; top:50%; transform:translateY(-50%); font-size:42px; color:var(--muted); cursor:pointer; user-select:none; padding:20px 10px; }
+  #lb .nav:hover { color:var(--text); }
+  #lb .nav.prev { left:8px; } #lb .nav.next { right:8px; }
+  #lb .keys { font-size:11px; color:var(--muted); padding:6px 16px 10px; text-align:center; }
+  #lbInfo { flex:0 0 auto; max-height:36vh; overflow:auto; border-top:1px solid var(--line); background:var(--panel); padding:12px 16px; display:grid; grid-template-columns:minmax(260px, 30%) 1fr; gap:6px 22px; }
+  #lbInfo[hidden] { display:none; }
+  #lbInfo .head { grid-column:1 / -1; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13px; }
+  #lbInfo .head b { font-weight:600; }
+  #lbInfo .kv { margin:0; }
+  #lbInfo .refs { margin:4px 0 0; }
+  #lbInfo .prompt { max-height:none; margin-top:4px; }
+  #lbInfo .prompt::after { display:none; }
+  #lb .btn.on { background:var(--accent); color:#08111a; }
+  @media (max-width: 900px) { #lbInfo { grid-template-columns:1fr; } }
+  #lb .top .btn { flex:0 0 auto; }
+  #lb .btn.selbtn { border-color:var(--gold); color:var(--gold); }
+  #lb .btn.selbtn:hover, #lb .btn.selbtn.on { background:var(--gold); border-color:var(--gold); color:#1a1200; }
+  #lb .btn.ngbtn { border-color:var(--err); color:var(--err); }
+  #lb .btn.ngbtn:hover, #lb .btn.ngbtn.on { background:var(--err); border-color:var(--err); color:#fff; }
+  /* selects grid */
+  .ogrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(var(--og-min, 300px), 100%), 1fr)); gap:10px; margin:10px 0 12px; align-items:start; }
+  .sizer { display:flex; align-items:center; gap:6px; }
+  .sizer input { width:140px; accent-color:var(--accent); }
+  .acts { position:absolute; right:6px; top:6px; display:flex; gap:4px; opacity:0; transition:opacity .12s; z-index:2; }
+  .tile:hover .acts, .tile.selected .acts, .tile.ng .acts, .acts:focus-within { opacity:1; }
+  .ico { width:28px; height:28px; border-radius:6px; border:1px solid rgba(255,255,255,.25); background:rgba(0,0,0,.65); color:#fff; cursor:pointer; font-size:14px; line-height:1; display:inline-flex; align-items:center; justify-content:center; padding:0; font-family:inherit; }
+  .ico svg { width:14px; height:14px; display:block; }
+  .ico:hover { border-color:#fff; }
+  .ico.star.on { background:var(--gold); color:#1a1200; border-color:var(--gold); }
+  .ico.x.on { background:var(--err); border-color:var(--err); }
+  .ogrid .cap i, .results .cap i { font-style:normal; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .ogrid a { display:block; position:relative; user-select:none; }
+  .ogrid img { width:100%; aspect-ratio:16/9; object-fit:contain; border-radius:8px; border:1px solid var(--line); display:block; background:#0e1216; }
+  .ogrid .cap { position:absolute; left:6px; bottom:6px; max-width:calc(100% - 12px); display:flex; white-space:nowrap; background:rgba(0,0,0,.7); color:#fff; font-size:11px; padding:2px 7px; border-radius:5px; font-family:ui-monospace, Menlo, monospace; }
+  .ogrid a.picked img { outline:3px solid var(--accent); outline-offset:2px; }
+  .ogrid a.picked::after { content:"✓"; position:absolute; right:8px; bottom:8px; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#08111a; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; z-index:2; }
+  #optBar, #exBar, #costBar, #setBar { position:sticky; top:var(--hdr, 46px); z-index:4; display:flex; flex-direction:column; gap:8px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:14px; box-shadow:0 6px 18px rgba(0,0,0,.35); }
+  .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-height:26px; }
+  .sep { width:1px; height:20px; background:var(--line); margin:0 4px; flex:0 0 auto; }
+  .lab { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-right:2px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; border:1px solid var(--line); color:var(--muted); font-size:12px; cursor:pointer; user-select:none; background:transparent; font-family:inherit; line-height:1.3; }
+  .chip:hover { color:var(--text); border-color:#4a5666; }
+  .chip.on { color:var(--text); background:#243040; border-color:#4a5a6e; }
+  .chip.gold.on { color:#1a1200; background:var(--gold); border-color:var(--gold); }
+  .chip.red.on { color:#fff; background:var(--err); border-color:var(--err); }
+  .chip[disabled] { opacity:.5; cursor:default; }
+  .chip.sec::before, .ogsub .sq { content:""; display:inline-block; width:8px; height:8px; border-radius:2px; background:#3a4655; flex:0 0 auto; }
+  .chip.sec.on::before, .ogsub .sq { background:var(--c, #3a4655); }
+  .lnk { color:var(--muted); cursor:pointer; text-decoration:underline dotted; }
+  .lnk:hover { color:var(--text); }
+  #optSecs { display:inline-flex; align-items:center; gap:8px; } #optSecs[hidden] { display:none; }
+  #runFilt { display:flex; align-items:center; gap:8px; } #runFilt[hidden] { display:none; }
+  #pickBar { position:fixed; top:calc(var(--hdr, 46px) + var(--bar, 0px) + 10px); left:50%; transform:translateX(-50%); z-index:6; display:flex; align-items:center; gap:10px; background:#1c2a3a; border:1px solid var(--accent); border-radius:999px; padding:6px 12px 6px 16px; box-shadow:0 8px 28px rgba(0,0,0,.55); font-size:12px; white-space:nowrap; }
+  #pickBar[hidden] { display:none; }
+  #pickBar b { color:var(--accent); font-weight:600; }
+  .ogroup { margin-bottom:16px; background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:clip; scroll-margin-top:calc(var(--hdr, 46px) + var(--bar, 0px) + 8px); }
+  .ohead { position:sticky; top:calc(var(--hdr, 46px) + var(--bar, 0px)); z-index:3; display:flex; align-items:center; gap:8px; margin:0; padding:9px 14px 9px 10px; background:var(--panel); border-bottom:1px solid var(--line); cursor:pointer; font-size:15px; font-weight:600; user-select:none; }
+  .ogroup.closed .ohead { border-bottom:none; }
+  .ohead:hover { background:#1f252d; }
+  .ohead > * { flex:0 0 auto; }
+  .ohead .gname { font:650 15px ui-monospace, Menlo, monospace; min-width:118px; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ohead .pill { font-weight:500; }
+  .ohead .spacer { flex:1 0 0; }
+  .ohead .chev { color:var(--muted); font-size:10px; width:12px; text-align:center; transition:transform .12s; }
+  .ogroup.closed .chev { transform:rotate(-90deg); }
+  .ogroup.closed .obody { display:none; }
+  .ohead .cnt { font-size:12px; color:var(--muted); font-weight:400; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .obody { padding:2px 14px 4px; }
+  .ogsub { display:flex; align-items:center; gap:6px; margin:10px 0 0; padding:4px 6px; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; cursor:pointer; user-select:none; border-radius:6px; }
+  .ogsub:hover { background:#222933; color:var(--text); }
+  .ogsub .n { font-weight:400; letter-spacing:0; text-transform:none; }
+  .ogsub .chev { font-size:10px; width:12px; text-align:center; transition:transform .12s; }
+  .ogsub.closed .chev { transform:rotate(-90deg); }
+  .ogsub + .ogrid { margin-top:6px; }
+  .ogsub .pk { font-size:11px; font-weight:500; letter-spacing:0; text-transform:none; padding:1px 8px; border-radius:999px; border:1px dashed var(--line); margin-left:4px; }
+  .ogsub .pk.has { color:#1a1200; background:var(--gold); border:1px solid var(--gold); }
+  .obatch { display:grid; grid-template-columns:170px 1fr; gap:12px; align-items:start; padding:8px 0 8px 6px; border-top:1px solid var(--line); }
+  .ogsub + .obatch, .obody > .obatch:first-child { border-top:none; }
+  .obatch:last-child { margin-bottom:4px; }
+  .obatch .ogrid { margin:0; }
+  .obatch .blab { font-size:12px; color:var(--muted); padding-top:2px; overflow-wrap:anywhere; }
+  .obatch .blab b { display:block; color:var(--text); font-weight:600; font-family:ui-monospace, Menlo, monospace; }
+  .obatch .blab .n { display:block; margin-top:3px; font-size:11px; }
+  @media (max-width: 900px) { .obatch { grid-template-columns:1fr; gap:6px; } }
+  .vtoggle { display:flex; flex:none; gap:2px; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+  .vtoggle a { padding:4px 12px; font-size:12px; color:var(--muted); cursor:pointer; text-decoration:none; user-select:none; white-space:nowrap; }
+  .vtoggle a.on { background:var(--accent); color:#08111a; }
+  .vtoggle[hidden] { display:none; }
+  @media (max-width: 1100px) { .body { grid-template-columns: 1fr; } .details { border-bottom:1px solid var(--line); } .results { border-left:none; } }
+  /* export, costs, settings */
+  .two { display:grid; grid-template-columns:minmax(420px, 1fr) minmax(320px, 1fr); gap:16px; align-items:start; }
+  @media (max-width: 1100px) { .two { grid-template-columns:1fr; } }
+  .form { display:grid; grid-template-columns:150px 1fr; gap:8px 12px; align-items:center; font-size:12px; }
+  .form .lab { text-transform:none; letter-spacing:0; font-size:12px; color:var(--muted); }
+  .form input[type=text], .form input[type=number], .form select { width:100%; max-width:520px; }
+  .form input[type=number] { max-width:120px; }
+  .form .hint { grid-column:2; color:var(--muted); font-size:11px; margin-top:-4px; }
+  .form .wide { grid-column:1 / -1; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px; margin-bottom:14px; }
+  .card { background:#0e1216; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .card .k { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .card .v { font-size:22px; font-weight:650; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .card .s { font-size:11px; color:var(--muted); margin-top:2px; }
+  .card.ok .v { color:var(--ok); } .card.warn .v { color:var(--warn); } .card.err .v { color:var(--err); } .card.gold .v { color:var(--gold); }
+  .budget { height:8px; background:#1a1f26; border:1px solid var(--line); border-radius:4px; overflow:hidden; margin-top:6px; }
+  .budget i { display:block; height:100%; background:var(--ok); }
+  .budget i.warn { background:var(--warn); } .budget i.over { background:var(--err); }
+  table.tbl { width:100%; border-collapse:collapse; font-size:12px; }
+  table.tbl th { text-align:left; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.5px; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.tbl td { padding:6px 8px; border-bottom:1px solid #20262e; vertical-align:top; font-variant-numeric:tabular-nums; }
+  table.tbl td.num, table.tbl th.num { text-align:right; }
+  table.tbl tr:hover td { background:#1f252d; }
+  table.tbl td.mono { font-family:ui-monospace, Menlo, monospace; font-size:11.5px; }
+  table.tbl td.dim { color:var(--muted); }
+  .bars { display:flex; align-items:flex-end; gap:3px; height:120px; padding:6px 0 0; border-bottom:1px solid var(--line); overflow:hidden; }
+  .bars div { flex:1 0 6px; max-width:28px; background:var(--accent); border-radius:3px 3px 0 0; min-height:2px; position:relative; }
+  .bars div:hover { background:var(--gold); }
+  .bars div span { display:none; position:absolute; bottom:100%; left:50%; transform:translateX(-50%); background:#0e1216; border:1px solid var(--line); border-radius:5px; padding:2px 6px; font-size:10px; white-space:nowrap; margin-bottom:4px; }
+  .bars div:hover span { display:block; }
+  .exlist .ex { display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:12px; }
+  .exlist .ex:first-child { border-top:none; }
+  .exlist .ex .name { font-family:ui-monospace, Menlo, monospace; min-width:0; overflow:hidden; text-overflow:ellipsis; flex:1 1 auto; }
+  .exlist .ex a.name { color:var(--accent); text-decoration:none; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .setsec { border-top:1px solid var(--line); padding-top:12px; margin-top:12px; }
+  .setsec:first-child { border-top:none; padding-top:0; margin-top:0; }
+  .setsec h3 { margin:0 0 10px; font-size:13px; display:flex; align-items:center; gap:10px; }
+  .setsec h3 .small { font-weight:400; }
+  .colcard { background:#0e1216; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px; }
+  .colcard .form { grid-template-columns:130px 1fr; }
+  .colcard .form input[type=text], .colcard .form select { max-width:420px; }
+  .colhead { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .colhead b { font-family:ui-monospace, Menlo, monospace; }
+  .swatch { width:14px; height:14px; border-radius:4px; display:inline-block; border:1px solid rgba(255,255,255,.2); }
+  input[type=color] { width:36px; height:24px; padding:0; border:1px solid var(--line); border-radius:6px; background:#0e1216; }
+  .secrow { display:grid; grid-template-columns:110px 130px 110px 46px 120px 28px; gap:6px; align-items:center; margin-bottom:4px; font-size:12px; }
+  .secrow input[type=text], .secrow select { width:100%; }
+  .errs { color:var(--err); font-size:12px; white-space:pre-wrap; margin:8px 0; }
+  .okmsg { color:var(--ok); font-size:12px; margin:8px 0; }
+  details.adv summary { cursor:pointer; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Run Monitor</h1>
+  <nav class="tabs">
+    <a href="#runs" data-tab="runs" class="on" title="Runs · the number is how many are running or queued now">Runs<span class="n" id="runCount" hidden></span></a>
+    <a href="#selects" data-tab="selects">Selects</a>
+    <a href="#export" data-tab="export" id="tabExport">Export</a>
+    <a href="#costs" data-tab="costs" id="tabCosts">Costs</a>
+    <a href="#settings" data-tab="settings">Settings</a>
+  </nav>
+  <span class="small" id="srvDots"></span>
+  <span class="spacer"></span>
+  <span id="runFilt" title="Filter the runs by category and group">
+    <span class="vtoggle" id="runCat"></span>
+    <select id="runGroup"><option value="">all</option></select>
+    <button class="chip" id="runRefresh" title="Re-read the run records and marks now (the tab also polls every few seconds)">↻ Refresh</button>
+  </span>
+  <label id="autoCollapseLab" title="Runs after the newest few start collapsed"><input type="checkbox" id="autoCollapse" checked> Collapse older</label>
+  <label id="hideNgLab" title="Hide the images marked NG (Runs and Selects tabs)"><input type="checkbox" id="optHideNg"> Hide NG</label>
+  <label id="selOnlyLab" title="Selects tab: show only the selects"><input type="checkbox" id="optSelOnly"> Selects only</label>
+  <span class="small" id="updated" title="Last update from the monitor server"></span>
+</header>
+<div id="toast"></div>
+<div id="lb" hidden>
+  <div class="top">
+    <span class="pill" id="lbCount"></span>
+    <span class="pill cmp" id="lbCmp" hidden title="Hold the mouse on the image (or the C key) to see the image this one was made from"></span>
+    <div class="t">
+      <div class="ln"><button class="cp" onclick="lbCopy('name', this)" title="Copy file name (without extension)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5A1.5 1.5 0 0 0 9 1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h.5"/></svg></button><span><b id="lbName"></b> <span class="small" id="lbCap"></span></span></div>
+      <div class="ln"><button class="cp" onclick="lbCopy('path', this)" title="Copy local file path"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5A1.5 1.5 0 0 0 9 1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h.5"/></svg></button><code id="lbPath"></code></div>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn selbtn" id="lbSel" onclick="lbToggleSelect()">★ Select (S)</button>
+    <button class="btn ngbtn" id="lbNg" onclick="lbToggleNg()">✕ Mark NG (X)</button>
+    <button class="btn" id="lbInfoBtn" onclick="lbToggleInfo()" title="Show or hide the generation details (I)">ⓘ Info (I)</button>
+    <button class="btn" id="lbReveal" onclick="lbReveal()" title="Show the file in Finder (F)">Show in Finder (F)</button>
+    <button class="btn" onclick="lbClose()">✕ Esc</button>
+  </div>
+  <div class="stage" id="lbStage"><span class="nav prev" onclick="lbStep(-1)">‹</span><img id="lbImg" alt="" draggable="false"><span class="nav next" onclick="lbStep(1)">›</span></div>
+  <div id="lbInfo" hidden></div>
+  <div class="keys">← → previous / next image · ↑ ↓ previous / next group · S select · X mark NG · hold click or C: compare with source · I info · F show in Finder · Esc close</div>
+</div>
+<main>
+  <div id="view-runs">
+    <section id="live" class="panel"><h2>In progress</h2><div id="liveBody" class="small">Nothing running.</div></section>
+    <div id="runs"></div>
+  </div>
+
+  <div id="view-selects" hidden>
+    <div id="optBar">
+      <div class="row">
+        <span class="vtoggle" id="optModeSeg"></span>
+        <span class="vtoggle" id="optVerSeg" title="Version: the current round, or an earlier one (frozen, for reference)" hidden></span>
+        <select id="optPage"><option value="">all</option></select>
+        <span class="sep"></span>
+        <button class="chip" id="optSort" title="Flip the order inside each group">↓ Newest first</button>
+        <button class="chip" id="optRefresh" title="Re-read the folders and the Finder tags">↻ Refresh</button>
+        <span class="sep"></span>
+        <a class="small lnk" id="optCollapseAll">collapse all</a>
+        <a class="small lnk" id="optExpandAll">expand all</a>
+        <span class="spacer"></span>
+        <span class="small" id="optCount"></span>
+        <label class="small sizer" title="Thumbnail size">▫<input type="range" id="optSize" min="160" max="960" step="20">◻</label>
+      </div>
+      <div class="row">
+        <span id="optSecs"><span class="lab">Sections</span><span id="optSecChips"></span></span>
+        <span class="spacer"></span>
+        <span class="small" id="optHelp"></span>
+      </div>
+    </div>
+    <div id="pickBar" hidden>
+      <b id="pickCount"></b>
+      <button class="chip gold on" id="pickStar" onclick="pickRun('sel')">★ Mark as selects</button>
+      <button class="chip red on" id="pickNg" onclick="pickRun('ng')">✕ Mark NG</button>
+      <span class="sep"></span>
+      <a class="small lnk" onclick="pickClear()" title="Clear the selection (Esc)">clear</a>
+    </div>
+    <div id="optBody"></div>
+  </div>
+
+  <div id="view-export" hidden>
+    <div class="two">
+      <div class="panel" id="exForm">
+        <h2>New export</h2>
+        <div class="row" style="margin-bottom:10px"><span class="lab">Template</span><span class="vtoggle" id="exTpl"></span><span class="sep"></span><span class="lab">Format</span><span class="vtoggle" id="exFmt"></span></div>
+        <div class="row" style="margin-bottom:10px"><span class="lab">Source</span><span class="vtoggle" id="exSrc"></span><span class="vtoggle" id="exVer" hidden></span><select id="exRun" hidden></select></div>
+        <div class="row" style="margin-bottom:10px" id="exGroupsRow"><span class="lab" id="exGroupsLab">Groups</span><div class="chips" id="exGroups"></div></div>
+        <div class="row" style="margin-bottom:10px" id="exSecsRow" hidden><span class="lab">Sections</span><div class="chips" id="exSecs"></div></div>
+        <div class="row" style="margin-bottom:10px"><span class="lab">Images</span><span class="vtoggle" id="exWhich"><a data-v="selects">Selects only</a><a data-v="all">All (hide NG)</a><a data-v="all_ng">Everything</a></span><span class="sep"></span><span class="lab">Order</span><span class="vtoggle" id="exSort"><a data-v="desc">Newest first</a><a data-v="asc">Oldest first</a></span></div>
+        <div class="row" style="margin-bottom:10px" id="exOpts"></div>
+        <div class="form" style="margin-bottom:10px">
+          <span class="lab">Title</span><input type="text" id="exTitle" placeholder="(project · template)">
+          <span class="lab">Subtitle</span><input type="text" id="exSub" placeholder="(scope · count · date)">
+        </div>
+        <div class="row"><button class="btn primary" id="exGo">Export</button><span class="small" id="exPreview"></span><span class="spacer"></span><span class="small" id="exStatus"></span></div>
+      </div>
+      <div class="panel">
+        <h2>Exports <span class="small" id="exDir"></span></h2>
+        <div class="exlist" id="exList"><span class="small">none yet</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-costs" hidden>
+    <div id="costBar">
+      <div class="row">
+        <span class="lab">Period</span><span class="vtoggle" id="costPeriod"><a data-v="all">All</a><a data-v="90">90 days</a><a data-v="30">30 days</a><a data-v="7">7 days</a></span>
+        <span class="sep"></span>
+        <button class="chip" id="costRefresh" title="Re-read the run records and the shared ledgers">↻ Refresh</button>
+        <button class="chip" id="costBalance" title="Ask Comfy for the account balance now (otherwise cached for a couple of minutes)">◎ Balance</button>
+        <button class="chip" id="costBackfill" title="Look up the billed cost of finished API runs that have none yet">⟲ Backfill costs</button>
+        <span class="sep"></span>
+        <button class="chip" id="costExport" title="Write this machine's ledger (JSON) into exports/, and into the shared folder when one is set; send it to the person keeping the project total">⇪ Export my usage</button>
+        <label class="chip" for="costImportFile" title="Import a teammate's exported ledger (JSON)">⇩ Import a ledger<input type="file" id="costImportFile" accept=".json,application/json" hidden></label>
+        <button class="chip" id="costCsv" title="One CSV with every person's runs and expenses, for the client invoice">⇪ Team ledger (CSV)</button>
+        <span class="spacer"></span>
+        <span class="small" id="costMeta"></span>
+      </div>
+    </div>
+    <div id="costBody"><span class="small">loading…</span></div>
+  </div>
+
+  <div id="view-settings" hidden>
+    <div id="setBar">
+      <div class="row">
+        <span class="small" id="setPath"></span>
+        <span class="spacer"></span>
+        <span class="small" id="setStatus"></span>
+        <button class="chip" id="setRevert" title="Discard the unsaved changes">Revert</button>
+        <button class="btn primary" id="setSave">Save settings</button>
+      </div>
+    </div>
+    <div class="panel" id="setBody"></div>
+  </div>
+</main>
+<script>
+// ---- shared helpers --------------------------------------------------------------------------------------------------
+const $ = s => document.querySelector(s);
+const store = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const base = s => (s || '').split('/').pop();
+const fmtT = iso => iso ? new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+const fmtSec = s => s == null ? '–' : s < 90 ? Math.round(s) + 's' : (s / 60).toFixed(1) + 'm';
+const usd = (v, d = 2) => v == null || isNaN(v) ? '–' : '$' + Number(v).toFixed(d);
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const dur = r => { if (!r.started) return ''; const e = (r.finished ? new Date(r.finished) : new Date()) - new Date(r.started); const s = Math.max(0, Math.round(e / 1000)); return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`; };
+const post = (url, body) => fetch(url, body === undefined ? {method: 'POST'} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}).then(r => r.json());
+function toast(msg, ms = 4000, bad) {
+  if (batchQuiet) { toast.last = msg; return; } const t = $('#toast'); t.textContent = msg; t.style.display = 'block';
+  t.classList.toggle('bad', bad ?? /failed|could not|not found|error|refus/i.test(msg)); clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = 'none', ms); }
+
+// ---- config (project.json via /api/config) -----------------------------------------------------------------------------
+let CFG = null;
+const T = () => (CFG && CFG.terms) || {unit: 'shot', units: 'shots'};
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+const COLS = () => (CFG && CFG.collections) || [];
+const colById = id => COLS().find(c => c.id === id);
+const catTop = c => (c || 'other').split(':')[0];
+const catInfo = c => (CFG && CFG._categories && (CFG._categories[c] || CFG._categories[catTop(c)])) || {label: c || 'other', color: '#8b95a3'};
+const catPill = (c, extra = '') => { const i = catInfo(c); const cls = c === 'other' ? ' dashed' : (colById(catTop(c)) || {}).color === '#8b95a3' || c === 'tests' ? ' muted' : '';
+  return `<span class="pill cat${cls}" style="--c:${esc(i.color)}" title="${esc(c)}${extra}">${esc(i.label)}</span>`; };
+const srvStyle = s => !s || s === 'local' ? 'color:var(--muted)' : /local/.test(s) ? 'color:var(--accent)' : 'color:var(--warn)';
+const selDestText = im => { const col = colById(im.col); if (!col) return 'Finder tag'; const sel = col.select || {};
+  if (sel.mode !== 'copy') return `${(CFG.selects.tags || {}).select || 'Yellow'} Finder tag only (nothing is copied)`;
+  return (im.dest && (im.dest[im.sec] || im.dest[''] || Object.values(im.dest)[0])) || sel.dest || 'copy'; };
+async function loadConfig() {
+  CFG = await fetch('/api/config').then(r => r.json());
+  document.title = CFG.project.title || 'Run Monitor'; $('#title').textContent = CFG.project.title || 'Run Monitor';
+  $('#tabExport').hidden = CFG.export && CFG.export.enabled === false; $('#tabCosts').hidden = CFG.costs && CFG.costs.enabled === false;
+  $('#runCat').innerHTML = [['', 'All'], ...COLS().map(c => [c.id, c.label]), ...(CFG.runs.extra_categories || []).map(x => [x.id, x.label || x.id]), ['other', 'Other']]
+    .map(([v, l]) => `<a data-cat="${esc(v)}">${esc(l)}</a>`).join('');
+  document.querySelectorAll('#runCat a').forEach(a => a.addEventListener('click', () => { runCat = a.dataset.cat; runGroup = ''; save('runCat', runCat); save('runGroup', ''); render(); }));
+  if (runCat && ![...document.querySelectorAll('#runCat a')].some(a => a.dataset.cat === runCat)) runCat = '';
+  $('#optModeSeg').innerHTML = COLS().map(c => `<a data-mode="${esc(c.id)}">${esc(c.label)}</a>`).join('');
+  document.querySelectorAll('#optModeSeg a').forEach(a => a.addEventListener('click', () => { optMode = a.dataset.mode; save('optMode', optMode); $('#optPage').value = ''; pickClear(); loadOptions(true); }));
+  if (!colById(optMode)) optMode = (COLS()[0] || {}).id;
+  if (CFG._errors && CFG._errors.length) toast('project.json: ' + CFG._errors[0] + (CFG._errors.length > 1 ? ` (+${CFG._errors.length - 1})` : ''), 8000, true);
+}
+
+// ---- runs ---------------------------------------------------------------------------------------------------------------
+let runs = [], queue = {online: false, running: [], pending: []}, promptOpen = {}, batchQuiet = false;
+let runCollapsed = store('runCollapsed', {});
+const isActive = r => r.status === 'running' || r.status === 'queued';
+const isLive = r => isActive(r) && Date.now() - new Date(r.started || Date.now()) < 6 * 3600e3;
+function dots() {
+  const sv = queue.servers || {}, nAct = runs.filter(isLive).length;
+  $('#runCount').hidden = !nAct; $('#runCount').textContent = nAct;
+  $('#srvDots').innerHTML = Object.keys(sv).map(n => `<span title="${sv[n].online ? '' : 'offline or tunnel down'}"><span class="dot ${sv[n].online ? 'on' : ''}"></span>${esc(n)}${sv[n].online ? ' · ' + sv[n].running.length + ' run · ' + sv[n].pending.length + ' wait' : ''}</span>`).join('');
+}
+function liveHtml() {
+  const bits = [];
+  for (const r of runs.filter(isActive)) {
+    const n = r.outputs.length, total = r.batch || 4, pct = r.status === 'running' && n ? Math.round(100 * n / total) : 0;
+    bits.push(`<div class="livecard"><span class="pill ${r.status}">${r.status}</span><b>${esc(r.title)}</b><span class="small">${esc(r.current_node || (r.status === 'queued' ? 'waiting for ComfyUI' : 'starting'))}</span><div class="bar ${pct ? '' : 'indet'}"><i style="width:${pct}%"></i></div><span class="small">${n}/${total} saved · ${dur(r)}</span></div>`);
+  }
+  const known = new Set(runs.map(r => r.prompt_id).filter(Boolean));
+  const foreign = [...queue.running, ...queue.pending].filter(q => !known.has(q.prompt_id));
+  if (foreign.length) bits.push(`<div class="livecard"><span class="pill running">comfy</span><span class="small">${foreign.length} other job(s) in the ComfyUI queue (started from the UI or elsewhere)</span></div>`);
+  return bits.length ? bits.join('') : '<span class="small">Nothing running.</span>';
+}
+const fmtCost = c => !c || c.usd == null ? (c && c.error ? 'cost ?' : '') : `${usd(c.usd, 3)} · ${Math.round(c.credits || 0)} cr`;
+function runKv(r) {
+  const loras = (r.loras || []).map(l => `<div><code>${esc(l.name)}</code> <b style="color:var(--accent)">${l.strength}</b></div>`).join('');
+  return `<div class="kv">
+    <b>seed</b><code>${r.seed ?? '—'}</code>
+    <b>model</b><code>${esc(r.model || '—')}</code>
+    <b>batch / ar / res</b><code>${r.batch ?? '—'} · ${esc(r.aspect || '—')} · ${esc(r.resolution || '—')}${r.quality ? ' · ' + esc(r.quality) : ''}</code>
+    ${r.steps ? `<b>steps / cfg</b><code>${r.steps} · cfg ${r.cfg ?? '—'} · ${esc(r.sampler || '')}</code>` : ''}
+    ${loras ? `<b>LoRAs</b><div>${loras}</div>` : ''}
+    ${r.gen_seconds != null || r.total_seconds != null ? `<b>timing</b><code>gen ${fmtSec(r.gen_seconds)} · total ${fmtSec(r.total_seconds)}</code>` : ''}
+    ${r.cost ? `<b>cost</b><code>${fmtCost(r.cost)}${r.cost.balance_usd != null ? ` <span class="small">(balance ${usd(r.cost.balance_usd)})</span>` : ''}${r.cost.error ? ` <span class="small" style="color:var(--err)">${esc(r.cost.error)}</span>` : ''}</code>` : ''}
+    ${(r.tags || []).length ? `<b>tags</b><code>${esc(r.tags.join(', '))}</code>` : ''}
+    ${r.note ? `<b>note</b><code>${esc(r.note)}</code>` : ''}
+    <b>workflow</b><code>${esc(r.workflow || '—')}</code>
+    <b>prompt_id</b><code>${esc(r.prompt_id || '—')}</code>
+  </div>`;
+}
+function refRole(name, r, i) {
+  const c = r.compare; if (c && c.ref === i && c.kind !== 'image 1') return c.kind;
+  const n = name.replace(/\.[^.]+$/, '');
+  for (const [rx, label] of (CFG.runs.ref_roles || [])) { try { if (new RegExp(rx, 'i').test(n)) return label; } catch (e) {} }
+  return 'reference';
+}
+function runRefs(r, active) {
+  const vs = r.ref_versions || (r.refs || []).map(p => ({src: 'in:' + p, state: 'unknown', v: ''}));
+  const refs = vs.map((v, i) => { const p = (r.refs || [])[i] || v.src.slice(3), q = encodeURIComponent(v.src) + (v.v ? '&v=' + v.v : '');
+    const tag = v.state === 'archived' ? '<span class="old" title="replaced since this run; showing the retired copy it used">old version</span>' : v.state === 'changed' ? '<span class="old" title="replaced since this run; the version it used was not found in Z_OLD/">file replaced</span>' : '';
+    const a = active === undefined ? ` target="_blank" data-src="${esc(v.src)}" onclick="return revealSrc(event, this.dataset.src)"` : ` class="${active && active.ref === i ? 'cmpsel' : ''}" onclick="return lbPickRef(event,${i})"`;
+    const tip = esc(v.src.slice(3)) + (active === undefined ? '\nclick: show in Finder · ⌘-click: open the image' : '\nclick: use for hold-to-compare · ⇧ / ⌘-click: show in Finder');
+    return `<a href="/full?src=${q}"${a} title="${tip}"><img loading="lazy" src="/thumb?src=${q}&w=240"><span class="n">${i + 1}</span>${tag}<div class="cap"><b>${esc(refRole(base(p), r, i))}</b> · ${esc(base(p))}</div></a>`; }).join('');
+  return `<div class="refs">${refs || '<span class="small">none</span>'}</div>`;
+}
+function revealSrc(e, src) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey) return true;
+  e.preventDefault(); post('/api/reveal?src=' + encodeURIComponent(src)).then(x => { if (!x.ok) toast('Show in Finder failed: ' + x.error, 6000); }).catch(err => toast('Show in Finder failed: ' + err, 6000));
+  return false;
+}
+async function revealIm(im) { const r = await post('/api/reveal?' + qs(im)).catch(e => ({ok: false, error: String(e)})); toast(r.ok ? 'Shown in Finder' : 'Show in Finder failed: ' + r.error, r.ok ? 2000 : 6000); }
+function runAr(r, im) {
+  if (im && im.w && im.h) return +(im.w / im.h).toFixed(4);
+  if (im && runArSeen[im.src]) return runArSeen[im.src];
+  const d = (r.images || []).find(x => x.w && x.h); if (d) return +(d.w / d.h).toFixed(4);
+  const m = /^(\d+):(\d+)$/.exec(r.aspect || ''); return m ? +(m[1] / m[2]).toFixed(4) : 1.7778;
+}
+const runArSeen = {};
+function runTileLoaded(img) {
+  const a = img.parentNode, ar = +(img.naturalWidth / img.naturalHeight).toFixed(4); if (!ar || +a.style.getPropertyValue('--ar') === ar) return;
+  a.style.setProperty('--ar', ar); const m = /src=([^&]+)/.exec(a.getAttribute('href')); if (m) runArSeen[decodeURIComponent(m[1])] = ar; layoutRuns(a.closest('.run'));
+}
+// result tiles of each open run card fill the results area: one shared height per row, the image's own shape per tile
+const RUN_TILE = {max: 520, block: 560, min: 150, gap: 10};
+function layoutRuns(scope) {
+  (scope || document).querySelectorAll('.run:not(.collapsed) .results').forEach(el => {
+    const tiles = [...el.children]; if (!tiles.length) return;
+    const cs = getComputedStyle(el), px = k => parseFloat(cs[k]) || 0;
+    const W = Math.floor(el.getBoundingClientRect().width - px('paddingLeft') - px('paddingRight') - px('borderLeftWidth')) - 1; if (W <= 0) return;
+    const det = el.previousElementSibling, side = det && det.offsetTop === el.offsetTop;
+    const budget = Math.max(RUN_TILE.block, side ? det.offsetHeight - px('paddingTop') - px('paddingBottom') : 0);
+    const ars = tiles.map(t => +t.style.getPropertyValue('--ar') || 1.7778), n = ars.length, g = RUN_TILE.gap;
+    let best = null;
+    for (let c = n; c >= 1; c--) {
+      if (c > 1 && n % c === 1) continue;
+      const rows = Math.ceil(n / c), hs = [];
+      for (let i = 0; i < n; i += c) { const row = ars.slice(i, i + c), fit = (W - g * (row.length - 1)) / row.reduce((a, b) => a + b, 0);
+        hs.push(Math.min(fit, RUN_TILE.max, Math.max((budget - g * (rows - 1)) / rows, Math.min(fit, RUN_TILE.min)))); }
+      const full = rows > 1 && n % c ? hs.slice(0, -1) : hs, h = Math.min(...full);
+      if (rows > 1) hs[rows - 1] = Math.min(hs[rows - 1], n % c ? h : Infinity);
+      if (!best || h > best.h * 1.25) best = {h, c, hs};
+    }
+    tiles.forEach((t, i) => { t.style.width = Math.floor(best.hs[Math.floor(i / best.c)] * ars[i]) + 'px'; });
+  });
+}
+window.addEventListener('resize', () => layoutRuns());
+function runHtml(r, idx) {
+  const collapsed = runCollapsed[r.id] ?? ($('#autoCollapse').checked && idx >= (CFG.runs.collapse_after ?? 2) && r.status === 'done');
+  const outs = (r.images || []).map((im, k) => { const it = runImageItem(r, im), sel = isSelIm(it), bad = isNg(it);
+    if (bad && optHideNg) return '';
+    return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}" style="--ar:${runAr(r, im)}" onclick="return openRunImage(event,'${r.id}',${k})"><img loading="lazy" src="${thumbUrl(im, 900)}"${im.w && im.h ? '' : ' onload="runTileLoaded(this)"'}><span class="cap">${capHtml(im.name)}</span>${markBtns(sel, bad, `runMark(event,'${r.id}',${k},`)}</a>`; }).join('');
+  const syncing = r.syncing || [], missing = Math.max(0, (r.batch || 4) - r.outputs.length - syncing.length);
+  const ph = (isActive(r) ? Array(missing).fill(`<div class="placeholder" style="--ar:${runAr(r)}">rendering…</div>`).join('') : '')
+           + syncing.map(o => `<div class="placeholder" style="--ar:${runAr(r)}">rendered · waiting for the remote mirror<br>${esc(base(o))}</div>`).join('');
+  const po = promptOpen[r.id] ? 'open' : '', ev = (r.events || []).slice(-6).map(e => `${e.t} ${esc(e.node)}`).join('\n');
+  const cost = r.cost && r.cost.usd != null ? `<span class="pill cost" title="billed Comfy credits for this run">${usd(r.cost.usd, 3)}</span>` : '';
+  return `<section class="run ${collapsed ? 'collapsed' : ''}" data-id="${r.id}">
+    <div class="head" onclick="toggleRun('${r.id}')">
+      <span class="pill ${r.status}">${r.status}</span>
+      <span class="pill" style="${srvStyle(r.server)};border-color:currentColor">${esc(r.server || 'local')}</span>
+      ${catPill(r.category)}
+      <span class="div"></span>
+      <span class="grp" title="${esc(r.group || '')}${r.version ? ' · version ' + esc(r.version) : ''}">${r.version ? esc(r.version) + ' · ' : ''}${esc(r.group || '—')}</span>
+      <h3 title="${esc(r.title)}">${esc(r.title)}</h3>
+      <span class="meta">${fmtT(r.started)}${r.finished ? ' → ' + fmtT(r.finished) : ''} · ${dur(r)} · ${r.outputs.length} img${r.gen_seconds != null ? ' · gen ' + fmtSec(r.gen_seconds) : ''}</span>
+      ${cost}
+      <span class="spacer"></span>
+      ${CFG.export.enabled !== false && r.images && r.images.length ? `<button class="btn quiet" onclick="event.stopPropagation(); exportRun('${r.id}')" title="Contact sheet of this run's images (into exports/)">⊞ Sheet</button>` : ''}
+      <button class="btn" onclick="event.stopPropagation(); reroll('${r.id}')" ${r.workflow ? '' : 'disabled title="no workflow file for this run"'}>↻ Re-roll seed</button>
+      ${r.status === 'error' || (!isActive(r) && !r.outputs.length) ? `<button class="btn danger" onclick="event.stopPropagation(); removeRun('${r.id}')" title="Move this record into runs/_removed/">✕ Remove</button>` : ''}
+      <span class="small">${esc(r.id)}</span>
+    </div>
+    <div class="body">
+      <div class="details">
+        <div class="ftitle">${esc(r.title)}</div>
+        ${runKv(r)}
+        <b class="small">Source images</b>
+        ${runRefs(r)}
+        <b class="small">Prompt</b>
+        <div class="prompt ${po}" id="p-${r.id}">${esc(r.prompt)}</div>
+        <span class="toggle" onclick="togglePrompt('${r.id}')">${po ? 'show less' : 'show full prompt'}</span>
+        ${ev ? `<div class="events">${ev}</div>` : ''}
+      </div>
+      <div class="results">${outs}${ph}</div>
+    </div>
+    ${r.error ? `<div class="err">${esc(r.error)}</div>` : ''}
+  </section>`;
+}
+async function reroll(id) {
+  const r = runs.find(x => x.id === id);
+  if (!confirm(`Queue "${r.title}" again with a new random seed?\nSame workflow, same source images, same prompt.${r.engine === 'api' ? ` This spends API credits for ${r.batch || 4} images.` : ''}`)) return;
+  try { const res = await post(`/api/reroll?id=${encodeURIComponent(id)}`); toast(res.ok ? `Queued: ${res.title}${res.note ? ' · ' + res.note : ''}` : `Re-roll failed: ${res.error}`, res.note ? 8000 : 4000); setTimeout(poll, 800); }
+  catch (e) { toast('Re-roll failed: ' + e); }
+}
+async function removeRun(id) {
+  if (!confirm(`Move the record of run ${id} into runs/_removed/? Its images (if any) stay where they are.`)) return;
+  const res = await post(`/api/run/remove?id=${encodeURIComponent(id)}`); toast(res.ok ? `Removed ${id}` : 'Remove failed: ' + res.error); poll.sig = null; poll();
+}
+async function exportRun(id) {
+  toast('Building the contact sheet…', 20000, false);
+  const res = await post('/api/export', {template: 'contact', scope: {run: id}, images: 'all_ng', format: 'jpg'});
+  if (res.ok) { toast(`Exported ${res.file}`, 6000, false); window.open(res.url, '_blank'); } else toast('Export failed: ' + res.error, 8000);
+}
+function toggleRun(id) {
+  runCollapsed[id] = !document.querySelector(`[data-id="${id}"]`).classList.contains('collapsed');
+  const ids = new Set(runs.map(r => r.id)); Object.keys(runCollapsed).forEach(k => { if (!ids.has(k)) delete runCollapsed[k]; });
+  save('runCollapsed', runCollapsed); render();
+}
+let runCat = store('runCat', ''), runGroup = store('runGroup', '');
+const runFilter = r => (!runCat || catTop(r.category) === runCat) && (!runGroup || catTop(r.category) + '|' + (r.group || '—') === runGroup);
+function runGroupOptions() {
+  const by = {}; runs.forEach(r => { const t = catTop(r.category); if (!runCat || t === runCat) (by[t] = by[t] || new Set()).add(r.group || '—'); });
+  const natural = (a, b) => a.localeCompare(b, undefined, {numeric: true});
+  const lab = t => (colById(t) || {}).label || ((CFG.runs.extra_categories || []).find(x => x.id === t) || {}).label || cap(t);
+  const opt = (t, g) => `<option value="${esc(t + '|' + g)}"${t + '|' + g === runGroup ? ' selected' : ''}>${esc(g)}</option>`;
+  const order = [...COLS().map(c => c.id), ...(CFG.runs.extra_categories || []).map(x => x.id), 'other'];
+  $('#runGroup').innerHTML = `<option value="">all${runCat ? ' ' + lab(runCat).toLowerCase() : ''}</option>` + order.filter(t => by[t]).map(t => {
+    const os = [...by[t]].sort(natural).map(g => opt(t, g)).join(''); return runCat ? os : `<optgroup label="${esc(lab(t))}">${os}</optgroup>`; }).join('');
+  if ($('#runGroup').value !== runGroup) { runGroup = ''; save('runGroup', ''); }
+}
+function togglePrompt(id) { promptOpen[id] = !promptOpen[id]; render(); }
+function render() {
+  $('#liveBody').innerHTML = liveHtml(); runGroupOptions();
+  document.querySelectorAll('#runCat a').forEach(a => a.classList.toggle('on', a.dataset.cat === runCat));
+  const list = runs.filter(runFilter);
+  $('#runs').innerHTML = list.map(runHtml).join('') || `<p class="small">${runs.length ? 'No runs match this filter.' : 'No runs logged yet. Every generation goes through <code>python3 monitor/run.py &lt;graph.api.json&gt; --title "..."</code>.'}</p>`;
+  layoutRuns(); dots(); $('#updated').textContent = new Date().toLocaleTimeString();
+}
+async function poll() {
+  try {
+    const [a, b] = await Promise.all([fetch('/api/runs').then(r => r.json()), fetch('/api/queue').then(r => r.json())]);
+    const sig = JSON.stringify(a.runs.map(r => [r.id, r.status, r.outputs.length, r.current_node, (r.syncing || []).length, (r.images || []).map(i => (i.sel ? 's' : '') + (i.ng ? 'n' : '')).join(''), r.cost && r.cost.usd]));
+    const runSig = JSON.stringify(a.runs.map(r => [r.id, r.status, r.outputs.length]));
+    queue = b;
+    if (sig !== poll.sig) { runs = a.runs; poll.sig = sig; render(); }
+    else { $('#liveBody').innerHTML = liveHtml(); dots(); $('#updated').textContent = new Date().toLocaleTimeString(); }
+    if (poll.runSig && runSig !== poll.runSig && opts) { if ($('#lb').hidden && !$('#view-selects').hidden) loadOptions(true); else optStale = true; }
+    else if (!poll.runSig && opts && !$('#view-selects').hidden && runs.some(isLive)) renderOptions();
+    poll.runSig = runSig;
+  } catch (e) { $('#srvDots').textContent = 'monitor server unreachable'; }
+}
+
+// ---- tabs ---------------------------------------------------------------------------------------------------------------
+const TABS = ['runs', 'selects', 'export', 'costs', 'settings'];
+function showTab(t) {
+  if (!TABS.includes(t)) t = 'runs';
+  document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === t));
+  TABS.forEach(x => { $('#view-' + x).hidden = x !== t; });
+  $('#runFilt').hidden = t !== 'runs'; $('#autoCollapseLab').hidden = t !== 'runs';
+  $('#hideNgLab').hidden = !(t === 'runs' || t === 'selects'); $('#selOnlyLab').hidden = t !== 'selects'; setHdr(); layoutRuns();
+  if (t === 'selects') loadOptions(true);
+  if (t === 'export') loadExport();
+  if (t === 'costs') loadCosts();
+  if (t === 'settings') loadSettings();
+}
+document.querySelectorAll('.tabs a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
+
+// ---- marks (select / NG) ---------------------------------------------------------------------------------------------------
+const qs = im => `src=${encodeURIComponent(im.src)}${im.srv ? '&srv=' + encodeURIComponent(im.srv) : ''}`;
+const thumbUrl = (im, w) => `/thumb?${qs(im)}&w=${w}`;
+const fullUrl = im => `/full?${qs(im)}`;
+const isSelIm = im => !!im.sel;
+const isNg = im => !!im.ng;
+function syncMark(src, patch) {  // the same file can be on screen in several places
+  for (const r of runs) for (const im of r.images || []) if (im.src === src) Object.assign(im, patch);
+  for (const im of optVisible) if (im.src === src) Object.assign(im, patch);
+  if (opts) for (const g of opts.groups) for (const f of g.files) if (f.src === src) Object.assign(f, patch);
+}
+async function setNg(im, on) {
+  if (on && isSelIm(im) && !await setSelect(im, false)) return false;
+  const r = await post(`/api/ng?${qs(im)}&on=${on ? 1 : 0}`).catch(e => ({ok: false, error: String(e)}));
+  if (!r.ok) { toast('NG failed: ' + r.error, 6000); return false; }
+  syncMark(im.src, {ng: !!r.ng, sel: on ? false : im.sel}); im.ng = !!r.ng; if (on) im.sel = false;
+  toast(r.ng ? `✕ ${im.name} marked NG (${(CFG.selects.tags || {}).ng || 'red'} tag in Finder)` : `${im.name}: NG cleared`);
+  return true;
+}
+async function setSelect(im, on) {
+  if (on && isNg(im) && !await setNg(im, false)) return false;
+  if (!im.col) { toast('This image is outside the project collections and cannot be marked', 5000); return false; }
+  const url = `/api/select?${qs(im)}&col=${encodeURIComponent(im.col)}&group=${encodeURIComponent(im.group || '')}&sec=${encodeURIComponent(im.sec || '')}&v=${encodeURIComponent(im.ver || '')}&on=${on ? 1 : 0}`;
+  const r = await post(url).catch(e => ({ok: false, error: String(e)}));
+  if (!r.ok) { toast('Select failed: ' + r.error, 6000); return false; }
+  syncMark(im.src, {sel: !!r.sel, ng: false}); im.sel = !!r.sel; im.ng = false;
+  if (r.mode === 'copy') toast(on ? `★ ${im.name} → ${r.dest}` : `${im.name} removed from ${r.dest}`); else toast(on ? `★ ${im.name} tagged in Finder` : `${im.name} tag removed`);
+  return true;
+}
+
+// ---- lightbox -------------------------------------------------------------------------------------------------------------
+let lb = {items: [], i: 0, action: null};
+function lbOpen(items, i, action) { lb = {items, i, action}; $('#lb').hidden = false; lbShow(); return false; }
+function lbClose() { $('#lb').hidden = true; poll.sig = null; poll(); if (!$('#view-selects').hidden) (optStale ? loadOptions(true) : renderOptions()); }
+function lbShow() {
+  const im = lb.items[lb.i]; if (!im) return;
+  $('#lbImg').src = thumbUrl(im, 1920);
+  [lb.i - 1, lb.i + 1].forEach(j => { const n = lb.items[j]; if (n) (new Image()).src = thumbUrl(n, 1920); });
+  const sel = isSelIm(im), bad = isNg(im);
+  $('#lbStage').classList.toggle('sel', sel); $('#lbStage').classList.toggle('ng', bad);
+  $('#lbSel').classList.toggle('on', sel); $('#lbSel').textContent = sel ? '★ Selected (S)' : '★ Select (S)'; $('#lbSel').title = sel ? 'Selected · click or S to unmark' : 'Mark select (S)';
+  $('#lbNg').classList.toggle('on', bad); $('#lbNg').textContent = bad ? '✕ NG (X)' : '✕ Mark NG (X)'; $('#lbNg').title = bad ? 'NG · click or X to clear' : 'Mark NG (X)';
+  $('#lbSel').hidden = $('#lbNg').hidden = !im.selectable;
+  lbHeld = false; $('#lbStage').classList.remove('cmp'); $('#lbCmp').classList.remove('on');
+  const cmp = lbCompare(im); $('#lbCmp').hidden = !cmp;
+  if (cmp) { $('#lbCmp').textContent = `⇄ hold: ${cmp.kind} ${cmp.name.replace(/\.[^.]+$/, '')}`; (new Image()).src = cmpUrl(cmp); }
+  $('#lbCount').textContent = `${lb.i + 1} / ${lb.items.length}`;
+  lbRenderInfo(im);
+  $('#lbName').textContent = im.name; $('#lbCap').textContent = `· ${im.group || ''}${im.caption ? ' · ' + im.caption : ''}`;
+  lbSetPath(im);
+}
+const pathCache = {};
+async function lbSetPath(im) {
+  const key = qs(im), box = $('#lbPath');
+  if (im.path) pathCache[key] = im.path;
+  if (!(key in pathCache)) { box.textContent = '…'; try { pathCache[key] = (await fetch('/api/path?' + key).then(r => r.json())).path || ''; } catch (e) { return; } if (lb.items[lb.i] !== im) return; }
+  box.textContent = pathCache[key] || 'file not found'; box.title = pathCache[key] || '';
+}
+async function lbCopy(what, btn) {
+  const im = lb.items[lb.i]; if (!im) return;
+  const text = what === 'name' ? im.name.replace(/\.[^.]+$/, '') : pathCache[qs(im)]; if (!text) return toast('No local path for this image');
+  try { await navigator.clipboard.writeText(text); } catch (e) { const ta = Object.assign(document.createElement('textarea'), {value: text}); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  btn.classList.add('ok'); clearTimeout(btn._t); btn._t = setTimeout(() => btn.classList.remove('ok'), 900); toast('Copied ' + text, 2500);
+}
+function lbReveal() { const im = lb.items[lb.i]; if (im) revealIm(im); }
+let lbInfoOn = true; try { lbInfoOn = localStorage.getItem('lbInfoOpen') !== '0'; } catch (e) {}
+function lbRenderInfo(im) {
+  const box = $('#lbInfo'); $('#lbInfoBtn').classList.toggle('on', lbInfoOn); box.hidden = !lbInfoOn; if (!lbInfoOn) return;
+  const r = im.run && runs.find(x => x.id === im.run);
+  if (!r) {
+    const dir = im.path ? im.path.slice(0, im.path.lastIndexOf('/') + 1) : '', mark = isSelIm(im) ? 'select' : isNg(im) ? 'NG' : '—';
+    box.innerHTML = `<div class="head">${catPill('other')}${im.group ? `<span class="grp">${esc(im.group)}</span>` : ''}<b>${esc(im.name || '')}</b>
+        <span class="small">No generation record for this image${im.run ? ' (run ' + esc(im.run) + ' not found)' : ': added by hand, or made before runs were logged'}.</span></div>
+      <div><div class="kv"><b>file</b><code>${esc(im.name || '—')}</code>${dir ? `<b>folder</b><code>${esc(dir)}</code>` : ''}${im.w && im.h ? `<b>size</b><code>${im.w} × ${im.h} px</code>` : ''}
+        ${im.sec ? `<b>section</b><code>${esc(secLabel(im))}</code>` : ''}${im.selectable ? `<b>mark</b><code>${mark}</code><b>select →</b><code>${esc(selDestText(im))}</code>` : im.caption ? `<b>from</b><code>${esc(im.caption)}</code>` : ''}</div></div>
+      <div><b class="small">Source images</b><div class="refs"><span class="small">none recorded, so there is nothing to hold-compare with</span></div></div>`;
+    return; }
+  box.innerHTML = `<div class="head"><span class="pill ${r.status}">${r.status}</span><span class="pill" style="${srvStyle(r.server)};border-color:currentColor">${esc(r.server || 'local')}</span>${catPill(r.category)}<span class="grp">${esc(r.group || '')}</span>
+      <b>${esc(r.title)}</b><span class="small">${fmtT(r.started)}${r.finished ? ' → ' + fmtT(r.finished) : ''} · ${dur(r)} · ${esc(r.id)}</span>${im.selectable ? `<span class="small">select → ${esc(selDestText(im))}</span>` : ''}</div>
+    <div>${runKv(r)}<b class="small">Source images</b> <span class="small">· click one to hold-compare with it · ⇧ / ⌘-click shows it in Finder</span>${runRefs(r, lbCompare(im))}</div>
+    <div><b class="small">Prompt</b><div class="prompt">${esc(r.prompt || '—')}</div></div>`;
+}
+function lbToggleInfo() { lbInfoOn = !lbInfoOn; try { localStorage.setItem('lbInfoOpen', lbInfoOn ? '1' : '0'); } catch (e) {} lbRenderInfo(lb.items[lb.i] || {}); }
+function lbStep(d) { lb.i = (lb.i + d + lb.items.length) % lb.items.length; lbShow(); }
+function lbGroup(d) {
+  const g = lb.items[lb.i].gkey; let j = lb.i;
+  while (j >= 0 && j < lb.items.length && lb.items[j].gkey === g) j += d;
+  if (j < 0 || j >= lb.items.length) return;
+  if (d < 0) { const g2 = lb.items[j].gkey; while (j > 0 && lb.items[j - 1].gkey === g2) j--; }
+  lb.i = j; lbShow();
+}
+async function lbToggleSelect() { const im = lb.items[lb.i]; if (!im || !im.selectable) return; if (await setSelect(im, !isSelIm(im))) lbShow(); }
+let lbHeld = false, cmpRefs = store('lbCmpRef', {});
+function lbCompare(im) {
+  const r = im && im.run && runs.find(x => x.id === im.run); if (!r) return null;
+  const k = cmpRefs[r.id], refs = r.refs || [], vs = r.ref_versions || [];
+  if (k != null && refs[k]) { const v = vs[k]; return {src: v ? v.src : 'in:' + refs[k], v: (v && v.v) || '', kind: 'image ' + (k + 1), name: base(refs[k]), ref: k, manual: true}; }
+  const c = r.compare; if (!c) return null;
+  const v = c.ref != null && vs[c.ref]; return v && v.state === 'archived' ? {...c, src: v.src, v: v.v} : c;
+}
+const cmpUrl = c => thumbUrl({src: c.src}, 1920) + (c.v ? '&v=' + encodeURIComponent(c.v) : '');
+function lbPickRef(e, k) {
+  e.preventDefault(); const im = lb.items[lb.i], r = im && im.run && runs.find(x => x.id === im.run); if (!r || !(r.refs || [])[k]) return false;
+  if (e.shiftKey || e.metaKey || e.ctrlKey) { const v = (r.ref_versions || [])[k]; post('/api/reveal?src=' + encodeURIComponent(v ? v.src : 'in:' + r.refs[k])).then(x => { if (!x.ok) toast('Show in Finder failed: ' + x.error, 6000); }); return false; }
+  if (cmpRefs[r.id] === k) delete cmpRefs[r.id]; else cmpRefs[r.id] = k;
+  save('lbCmpRef', cmpRefs); lbShow(); const c = lbCompare(im); toast(c ? `⇄ Hold to compare with ${c.kind}: ${c.name}` : 'No compare image for this run now', 3000);
+  return false;
+}
+function lbHold(on) {
+  const im = lb.items[lb.i], cmp = lbCompare(im); if (!cmp || lbHeld === on) return; lbHeld = on;
+  $('#lbImg').src = on ? cmpUrl(cmp) : thumbUrl(im, 1920); $('#lbStage').classList.toggle('cmp', on); $('#lbCmp').classList.toggle('on', on);
+  $('#lbCmp').textContent = on ? `⇄ ${cmp.kind}: ${cmp.name.replace(/\.[^.]+$/, '')}` : `⇄ hold: ${cmp.kind} ${cmp.name.replace(/\.[^.]+$/, '')}`;
+}
+$('#lbImg').addEventListener('pointerdown', e => { if (e.button === 0) { e.preventDefault(); lbHold(true); } });
+['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => $('#lbImg').addEventListener(ev, () => lbHold(false)));
+window.addEventListener('pointerup', () => lbHold(false)); window.addEventListener('blur', () => lbHold(false));
+document.addEventListener('keyup', e => { if ((e.key === 'c' || e.key === 'C') && !$('#lb').hidden) lbHold(false); });
+async function lbToggleNg() { const im = lb.items[lb.i]; if (!im || !im.selectable) return; if (await setNg(im, !isNg(im))) lbShow(); }
+document.addEventListener('keydown', e => {
+  if ($('#lb').hidden || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (k === 'ArrowRight') lbStep(1); else if (k === 'ArrowLeft') lbStep(-1); else if (k === 'ArrowDown') lbGroup(1); else if (k === 'ArrowUp') lbGroup(-1);
+  else if (k === 's' || k === 'S' || k === ' ') lbToggleSelect(); else if (k === 'x' || k === 'X') lbToggleNg(); else if (k === 'c' || k === 'C') lbHold(true);
+  else if (k === 'i' || k === 'I') lbToggleInfo(); else if (k === 'f' || k === 'F') lbReveal(); else if (k === 'Enter' || k === 'Escape') lbClose(); else return;
+  e.preventDefault();
+});
+// a run's image as a lightbox / marks item: its own place in the collections (server: col / grp / sec / ver), else the run's
+function runImageItem(r, im) {
+  const col = im.col || (colById(catTop(r.category)) ? catTop(r.category) : null);
+  return {...im, col, group: im.grp || r.group, sec: im.sec ?? r.section, ver: im.ver ?? r.version, gkey: r.id, run: r.id,
+          selectable: !!col && (im.tagged !== undefined || (colById(col).select || {}).mode === 'copy'), caption: `${r.id} · ${r.title}${r.seed != null ? ' · seed ' + r.seed : ''}`};
+}
+function runItems() { return runs.filter(runFilter).flatMap(r => (r.images || []).map(im => runImageItem(r, im))).filter(it => !optHideNg || !isNg(it)); }
+async function runMark(e, id, k, what) {
+  e.preventDefault(); e.stopPropagation();
+  const r = runs.find(x => x.id === id), im = r && r.images[k]; if (!im) return false;
+  const it = runImageItem(r, im);
+  if (what === 'reveal') { revealIm(it); return false; }
+  if (await (what === 'ng' ? setNg(it, !isNg(it)) : setSelect(it, !isSelIm(it)))) { poll.sig = null; poll(); }
+  return false;
+}
+function openRunImage(e, id, k) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return true;
+  e.preventDefault(); const items = runItems();
+  return lbOpen(items, Math.max(0, items.findIndex(x => x.run === id && x.name === (runs.find(r => r.id === id).images[k] || {}).name)));
+}
+
+// ---- Selects tab ------------------------------------------------------------------------------------------------------------
+let opts = null, optVisible = [], optStale = false;
+let optMode = store('optMode', null), optVer = null;
+const verPref = key => { const p = store(key, null); return p && p.cur === CFG._cur && CFG._versions.includes(p.v) ? p.v : CFG._cur; };
+const verSave = (key, v) => save(key, {cur: CFG._cur, v});
+let optSort = store('optSort', 'desc'), optSelOnly = store('optSelOnly', false), optHideNg = store('optHideNg', false);
+let optSecs = store('optSecs', {});          // {collection id: {section id: shown?}}
+let optClosed = store('optClosed', {}), optClosedSec = store('optClosedSec', []);
+const closedSet = () => new Set(optClosed[optMode] || []);
+const setClosed = st => { optClosed[optMode] = [...st]; save('optClosed', optClosed); };
+function toggleSec(page, sec) { const k = page + '/' + sec, st = new Set(optClosedSec); st.has(k) ? st.delete(k) : st.add(k); optClosedSec = [...st]; save('optClosedSec', optClosedSec); renderOptions(); }
+const curCol = () => colById(optMode) || COLS()[0];
+const colSecs = col => (col && col.kind === 'shots' && col.sections && col.sections.length > 1) ? col.sections : [];
+const secShown = (col, sid) => { const m = optSecs[col.id] || {}; return m[sid] !== false; };
+const secOf = (col, sid) => (col.sections || []).find(s => s.id === sid);
+const secLabel = im => { const col = colById(im.col); const s = col && secOf(col, im.sec); return s ? s.label : (im.sec || '').replace(/_white$/, ' (white)').replace(/_/g, ' '); };
+async function loadOptions(quiet) {
+  const col = curCol(); if (!col) { $('#optBody').innerHTML = '<p class="small">No collections configured (Settings → Collections).</p>'; return; }
+  optMode = col.id;
+  document.querySelectorAll('#optModeSeg a').forEach(a => a.classList.toggle('on', a.dataset.mode === optMode));
+  if (col.versioned) { if (!optVer || !CFG._versions.includes(optVer)) optVer = verPref('optVer'); } else optVer = '';
+  $('#optVerSeg').hidden = !col.versioned;
+  $('#optVerSeg').innerHTML = CFG._versions.map(v => `<a data-ver="${v}" class="${v === optVer ? 'on' : ''}" onclick="setOptVer('${v}')" title="${v === CFG._cur ? 'The current round: new renders land here' : 'An earlier round, kept for reference'}">${v}</a>`).join('');
+  const secs = colSecs(col); $('#optSecs').hidden = !secs.length;
+  $('#optSecChips').innerHTML = secs.map(s => `<button class="chip sec${secShown(col, s.id) ? ' on' : ''}" data-sec="${esc(s.id)}" style="--c:${esc(s.color || col.color)}" title="Show or hide · ⌥-click to solo">${esc(s.label)}</button>`).join('');
+  document.querySelectorAll('#optSecChips .chip').forEach(c => c.addEventListener('click', e => {
+    const m = optSecs[col.id] = optSecs[col.id] || {}, sc = c.dataset.sec, ids = secs.map(s => s.id), solo = ids.every(k => (m[k] !== false) === (k === sc));
+    if (e.altKey) ids.forEach(k => m[k] = solo || k === sc); else m[sc] = !(m[sc] !== false);
+    save('optSecs', optSecs); loadOptions(true);
+  }));
+  const sel = col.select || {}, tagName = (CFG.selects.tags || {}).select || 'Yellow';
+  $('#optHelp').innerHTML = `${col.versioned && optVer !== CFG._cur ? `<b style="color:var(--warn)">${optVer} is frozen: new renders go to ${CFG._cur}</b> · ` : ''}★ / <b>S</b> select → ${sel.mode === 'copy' ? 'copied to ' + esc(sel.dest || 'the select folder') : tagName + ' Finder tag (nothing is copied)'} · ✕ / <b>X</b> mark NG (${esc((CFG.selects.tags || {}).ng || 'Red')} tag) · folder button: show in Finder${secs.length ? ' · ⌥-click a section to solo it' : ''} · ⇧ / ⌘-click to pick several`;
+  try { opts = await fetch(`/api/collection?id=${encodeURIComponent(optMode)}&v=${encodeURIComponent(optVer || '')}`).then(r => r.json()); } catch (e) { toast('Could not load: ' + e, 6000); return; }
+  if (opts.error) { toast(opts.error, 6000); opts = {groups: []}; }
+  optStale = false; renderOptions();
+  if (!quiet) toast(`Refreshed · ${opts.groups.reduce((n, p) => n + p.files.length, 0)} images`, 2000);
+}
+function setOptVer(v) { if (v === optVer) return; optVer = v; verSave('optVer', v); pickClear(); loadOptions(true); }
+const capOf = f => [f.run, f.title, f.seed != null ? 'seed ' + f.seed : '', f.server && f.server !== 'local' ? f.server : ''].filter(Boolean).join(' · ');
+function optItemsAll() {
+  const col = curCol(), pf = $('#optPage').value, dir = optSort === 'asc' ? -1 : 1, secs = colSecs(col);
+  const rank = s => { const i = (col.sections || []).findIndex(x => x.id === s); if (i >= 0) return (col.sections[i].sub ? 0 : 1) * 100 + i;
+    const o = col.section_order || []; const j = o.findIndex(p => (s || '').startsWith(p)); return s === 'other' ? 999 : j < 0 ? 500 : j; };
+  return (opts ? opts.groups : []).filter(p => !pf || p.group === pf).flatMap((p, pi) => p.files.map((f, j) => ({...f, col: col.id, group: p.group, sec: f.section, ver: opts.version || '',
+      pi, j, dest: p.dest, gkey: p.group + '/' + (f.section || ''), selectable: true, caption: capOf(f)})))
+    .filter(im => (!secs.length || secShown(col, im.sec)) && (!optSelOnly || isSelIm(im)) && (!optHideNg || !isNg(im)))
+    .sort((a, b) => a.pi - b.pi || rank(a.sec) - rank(b.sec) || (a.j - b.j) * dir);
+}
+const FOLDER_ICO = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M1.75 4.25a1 1 0 0 1 1-1h3.1l1.5 1.6h5.9a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/></svg>';
+const markBtns = (sel, bad, call) => `<span class="acts"><button class="ico star${sel ? ' on' : ''}" title="${sel ? 'Selected · click to unmark' : 'Mark select'}" onclick="return ${call}'sel')">★</button>`
+  + `<button class="ico x${bad ? ' on' : ''}" title="${bad ? 'NG · click to clear' : 'Mark NG (bad)'}" onclick="return ${call}'ng')">✕</button>`
+  + `<button class="ico" title="Show in Finder" onclick="return ${call}'reveal')">${FOLDER_ICO}</button></span>`;
+const capHtml = name => { const m = /^(.*?)(_\d+_?)?$/.exec(name.replace(/\.[^.]+$/, '')); return `<i>${esc(m[1])}</i>${esc(m[2] || '')}`; };
+const arSeen = {};
+function tileLoaded(img, i) { const im = optVisible[i]; if (im && !(im.w && im.h) && img.naturalWidth) img.style.aspectRatio = arSeen[im.src] = img.naturalWidth + '/' + img.naturalHeight; }
+const tileHtml = (im, i) => { const sel = isSelIm(im), bad = isNg(im), ar = im.w && im.h ? im.w + '/' + im.h : arSeen[im.src];
+  return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}${optPicked.has(im.src) ? ' picked' : ''}" title="${esc(im.caption)}" data-i="${i}" onclick="return openOpt(event,${i})"><img loading="lazy" src="${thumbUrl(im, optThumbW())}"${ar ? ` style="aspect-ratio:${ar}"` : ''} onload="tileLoaded(this,${i})"><span class="cap">${capHtml(im.name)}</span>${markBtns(sel, bad, `optMark(event,${i},`)}</a>`; };
+let optPend = {};
+function groupHead(page, g) {
+  const col = curCol(), nSel = g.items.filter(isSelIm).length, nNg = g.items.filter(isNg).length, nRun = (optPend[page] || []).length, secs = colSecs(col);
+  const comp = secs.length ? secs.map(s => { const n = g.items.filter(x => x.sec === s.id).length; return n ? `<span class="pill">${n} ${esc(s.label.toLowerCase())}</span>` : ''; }).join('') : `<span class="pill">${plural(g.items.length, 'image')}</span>`;
+  const dest = g.dest && (g.dest[''] || g.dest.option || Object.values(g.dest)[0]);
+  return `<span class="chev">▾</span><span class="gname" title="${esc(page)}">${esc(page)}</span>${comp}`
+       + (nSel ? `<span class="pill sel" title="${plural(nSel, 'select')}">★ ${nSel}</span>` : '') + (nNg ? `<span class="pill ngp" title="${nNg} marked NG">✕ ${nNg} NG</span>` : '')
+       + (nRun ? `<span class="pill running">${plural(nRun, 'batch').replace('batchs', 'batches')} running</span>` : '')
+       + (dest ? `<span class="cnt" title="selects are copied here">→ <code>${esc(dest)}/</code></span>` : '')
+       + `<span class="spacer"></span>` + (g.items.length ? `<button class="btn" title="Show this group's folder in Finder" onclick="return groupReveal(event, this)">Folder in Finder</button>` : '');
+}
+function groupReveal(e, btn) { e.preventDefault(); e.stopPropagation(); const page = btn.closest('.ogroup').dataset.group, l = optItemsAll().filter(x => x.page === page || x.group === page), im = l.find(x => !secOf(curCol(), x.sec) || !secOf(curCol(), x.sec).sub) || l[0]; if (im) revealIm(im); return false; }
+function pendingRuns() {
+  const col = curCol();
+  return runs.filter(r => isLive(r) && catTop(r.category) === col.id && (!col.versioned || !r.version || r.version === optVer)).map(r => ({r, g: r.group || '', sec: r.section || (col.sections || [{id: ''}])[0].id, missing: Math.max(0, (r.batch || 4) - r.outputs.length - (r.syncing || []).length)}));
+}
+const pendTiles = p => { const ar = /^\d+:\d+$/.test(p.r.aspect || '') ? ` style="aspect-ratio:${p.r.aspect.replace(':', '/')}"` : ''; return Array(p.missing).fill(`<div class="placeholder"${ar}>${p.r.status === 'queued' ? 'queued…' : 'generating…'}</div>`).join(''); };
+const pendRow = p => `<div class="obatch"><div class="blab"><b>${esc(p.r.id)}</b>${esc(p.r.title || '')}<span class="n"><span class="pill ${p.r.status}">${p.r.status}</span>${p.r.outputs.length}/${p.r.batch || 4} saved</span></div><div class="ogrid">${pendTiles(p)}</div></div>`;
+function subHead(sec, list, closed) {
+  const col = curCol(), s = secOf(col, sec), lab = s ? s.label : sec.replace(/_white$/, ' (white)').replace(/_/g, ' '), nSel = list.filter(isSelIm).length;
+  const sq = s ? `<span class="sq" style="--c:${esc(s.color || col.color)}"></span>` : '';
+  return `<div class="ogsub${closed ? ' closed' : ''}" data-sec="${esc(sec)}" onclick="toggleSec(this.parentElement.parentElement.dataset.group,this.dataset.sec)" title="${closed ? 'Expand' : 'Collapse'} ${esc(lab.toLowerCase())}"><span class="chev">▾</span>${sq}${esc(lab)} <span class="n">${s ? list.length : plural(list.length, 'image')}</span>`
+       + (s ? '' : `<span class="pk${nSel ? ' has' : ''}">${nSel ? '★ ' + plural(nSel, 'select') : 'no select yet'}</span>`) + '</div>';
+}
+function renderOptions() {
+  if (!opts) return;
+  const col = curCol(), sel = $('#optPage'), cur = sel.value, units = T().units;
+  sel.innerHTML = `<option value="">all ${esc(col.kind === 'shots' ? units : col.label.toLowerCase())}</option>` + opts.groups.map(p => `<option ${p.group === cur ? 'selected' : ''}>${esc(p.group)}</option>`).join('');
+  const pf = sel.value, all = optItemsAll(), closed = closedSet(); renderedThumbW = optThumbW();
+  const groups = new Map();
+  opts.groups.filter(p => !pf || p.group === pf).forEach(p => groups.set(p.group, {items: [], dest: p.dest}));
+  all.forEach(im => groups.get(im.group).items.push(im));
+  optPend = {};
+  for (const p of (optSelOnly ? [] : pendingRuns())) {
+    const names = [...groups.keys()], key = groups.has(p.g) ? p.g : names.find(n => n.startsWith(p.g + ' / ')) || (!pf || pf === p.g ? p.g : null);
+    if (!key) continue; if (!groups.has(key)) groups.set(key, {items: [], dest: null}); (optPend[key] = optPend[key] || []).push(p);
+  }
+  const items = []; let html = '';
+  const secIds = colSecs(col).map(s => s.id), rank = s => { const i = secIds.indexOf(s); return i < 0 ? 999 : (col.sections[i].sub ? 0 : 1) * 100 + i; };
+  for (const [page, g] of groups) {
+    const pend = optPend[page] || [], fresh = pend.filter(p => !g.items.some(x => x.run === p.r.id));
+    if (!g.items.length && !pend.length) continue;
+    const isClosed = !pf && closed.has(page);
+    const secsHere = [...new Set(g.items.map(x => x.sec).filter(x => x))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, {numeric: true}));
+    const subs = secIds.length ? g.items.some(x => secOf(col, x.sec) && secOf(col, x.sec).sub) : secsHere.length > 1 || (secsHere.length === 1 && secsHere[0] !== 'other');
+    html += `<section class="ogroup${isClosed ? ' closed' : ''}" data-group="${esc(page)}"><h3 class="ohead" onclick="toggleGroup(this.parentElement.dataset.group)">${groupHead(page, g)}</h3><div class="obody">`;
+    const tiles = (list, more = '') => { html += '<div class="ogrid">'; for (const im of list) { items.push(im); html += tileHtml(im, items.length - 1); } html += more + '</div>'; };
+    const placed = new Set();
+    const grid = (list, mine = []) => {  // one labeled row per batch (the run that made the images); a plain grid when no run is known
+      const by = new Map(); list.forEach(im => { const k = im.run || ''; by.has(k) ? by.get(k).push(im) : by.set(k, [im]); });
+      mine.filter(p => !by.has(p.r.id) && !placed.has(p.r.id)).forEach(p => { placed.add(p.r.id); html += pendRow(p); });
+      if (by.size === 1 && by.has('')) return tiles(list);
+      const rows = [];
+      for (const [run, l] of by) { const last = rows[rows.length - 1], live = pend.some(p => p.r.id === run);
+        if (run && !live && l.length === 1 && last && last.singles) { last.l.push(l[0]); last.n++; } else rows.push({run, l: [...l], n: 1, singles: !!run && !live && l.length === 1}); }
+      for (const {run, l, n} of rows) {
+        if (n > 1) { html += `<div class="obatch"><div class="blab"><b>${plural(n, 'run')}</b>one image each: ${esc(l[0].run)} … ${esc(l[n - 1].run)}<span class="n">${plural(n, 'image')}</span></div>`; tiles(l); html += '</div>'; continue; }
+        const f = l[0], rr = run && runs.find(x => x.id === run), extra = run ? [f.seed != null ? 'seed ' + f.seed : '', f.server && f.server !== 'local' ? f.server : '', rr && rr.cost && rr.cost.usd != null ? usd(rr.cost.usd, 2) : ''].filter(Boolean).join(' · ') : '';
+        html += `<div class="obatch"><div class="blab">${run ? `<b>${esc(run)}</b>${esc(f.title || '')}` : '<b>no run record</b>added by hand or before logging'}<span class="n">${plural(l.length, 'image')}${extra ? ' · ' + esc(extra) : ''}</span></div>`;
+        const live = pend.find(p => p.r.id === run); if (live) placed.add(run);
+        tiles(l, live ? pendTiles(live) : ''); html += '</div>';
+      }
+    };
+    if (isClosed) {}
+    else if (!subs) grid(g.items, fresh);
+    else {
+      const order = secIds.length ? secIds.slice().sort((a, b) => rank(a) - rank(b)) : secsHere;
+      grid([], fresh.filter(p => !order.includes(p.sec)));
+      for (const sec of order) {
+        const list = g.items.filter(x => x.sec === sec), mine = fresh.filter(p => p.sec === sec); if (!list.length && !mine.length) continue;
+        const secClosed = optClosedSec.includes(page + '/' + sec);
+        html += subHead(sec, list, secClosed); if (!secClosed) grid(list, mine);
+      }
+    }
+    html += '</div></section>';
+  }
+  optVisible = items; optAnchor = null;
+  const vis = new Set(items.map(im => im.src)); optPicked.forEach(src => { if (!vis.has(src)) optPicked.delete(src); });
+  const total = opts.groups.reduce((n, p) => n + p.files.length, 0);
+  $('#optBody').innerHTML = html || (total ? '<p class="small">No images match the current filters. <a class="lnk" onclick="optReset()">Reset filters</a></p>'
+    : opts.missing ? `<p class="small">The folder for this collection does not exist yet: <code>${esc(opts.root)}</code>. It appears once a run saves into it.</p>`
+    : `<p class="small">No images in <code>${esc(opts.root || '')}</code> yet.</p>`);
+  $('#optCount').textContent = `${all.length}${all.length !== total ? ' of ' + total : ''} images`;
+  syncOptBar(); setHdr(); pickBar();
+}
+let optPicked = new Set(), optAnchor = null;
+function pickApply(indices, on) { indices.forEach(i => { const im = optVisible[i]; if (!im) return; optPicked[on ? 'add' : 'delete'](im.src); const a = document.querySelector(`#optBody a[data-i="${i}"]`); if (a) a.classList.toggle('picked', on); }); pickBar(); }
+function optPick(e, i) {
+  if (e.shiftKey) { if (optAnchor == null) optAnchor = i; const lo = Math.min(optAnchor, i), hi = Math.max(optAnchor, i); pickApply(Array.from({length: hi - lo + 1}, (_, k) => lo + k), true); }
+  else { pickApply([i], !optPicked.has(optVisible[i].src)); optAnchor = i; }
+}
+function pickClear() { optPicked.clear(); document.querySelectorAll('#optBody a.picked').forEach(a => a.classList.remove('picked')); optAnchor = null; pickBar(); }
+function pickBar() {
+  const picked = optVisible.filter(im => optPicked.has(im.src)), n = picked.length;
+  $('#pickBar').hidden = !n; if (!n || pickRun.busy) return;
+  const allSel = picked.every(isSelIm), allNg = picked.every(isNg);
+  $('#pickCount').textContent = `${n} picked`;
+  $('#pickStar').textContent = allSel ? '☆ Unmark selects' : '★ Mark as selects'; $('#pickStar').dataset.on = allSel ? '0' : '1';
+  $('#pickNg').textContent = allNg ? '✕ Clear NG' : '✕ Mark NG'; $('#pickNg').dataset.on = allNg ? '0' : '1';
+}
+async function pickRun(what) {
+  const picked = optVisible.filter(im => optPicked.has(im.src)); if (!picked.length || pickRun.busy) return;
+  const on = $(what === 'ng' ? '#pickNg' : '#pickStar').dataset.on === '1';
+  pickRun.busy = true; batchQuiet = true; toast.last = ''; let ok = 0, fail = 0;
+  $('#pickStar').disabled = $('#pickNg').disabled = true;
+  for (const [k, im] of picked.entries()) { $('#pickCount').textContent = `${k + 1} / ${picked.length}…`; (await (what === 'ng' ? setNg(im, on) : setSelect(im, on))) ? ok++ : fail++; }
+  batchQuiet = false; pickRun.busy = false; $('#pickStar').disabled = $('#pickNg').disabled = false;
+  const verb = what === 'ng' ? (on ? '✕ NG set on' : 'NG cleared on') : (on ? '★ Selected' : 'Unmarked');
+  toast(`${verb} ${ok} image${ok === 1 ? '' : 's'}${fail ? ` · ${fail} failed (${toast.last})` : ''}`, 6000); renderOptions();
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#lb').hidden && optPicked.size) { e.preventDefault(); pickClear(); } });
+function syncOptBar() {
+  $('#optSort').textContent = optSort === 'asc' ? '↑ Oldest first' : '↓ Newest first';
+  $('#optSelOnly').checked = optSelOnly; $('#optHideNg').checked = optHideNg;
+  $('#optCollapseAll').hidden = $('#optExpandAll').hidden = !!$('#optPage').value;
+}
+async function optMark(e, i, what) {
+  e.preventDefault(); e.stopPropagation();
+  const im = optVisible[i]; if (!im) return false;
+  if (what === 'reveal') { revealIm(im); return false; }
+  if (!await (what === 'ng' ? setNg(im, !isNg(im)) : setSelect(im, !isSelIm(im)))) return false;
+  if ((optSelOnly && !isSelIm(im)) || (optHideNg && isNg(im))) return renderOptions(), false;
+  const a = document.querySelector(`#optBody a[data-i="${i}"]`); if (a) a.outerHTML = tileHtml(im, i);
+  const h = document.querySelector(`#optBody .ogroup[data-group="${CSS.escape(im.group)}"] .ohead`);
+  if (h) h.innerHTML = groupHead(im.group, {items: optVisible.filter(x => x.group === im.group), dest: im.dest});
+  const sh = document.querySelector(`#optBody .ogroup[data-group="${CSS.escape(im.group)}"] .ogsub[data-sec="${CSS.escape(im.sec || '')}"]`);
+  if (sh) sh.outerHTML = subHead(im.sec, optVisible.filter(x => x.group === im.group && x.sec === im.sec), false);
+  return false;
+}
+function optReset() { optSelOnly = false; optHideNg = false; optSecs = {}; save('optSelOnly', false); save('optHideNg', false); save('optSecs', optSecs); loadOptions(true); render(); }
+function toggleGroup(page) { const st = closedSet(); st.has(page) ? st.delete(page) : st.add(page); setClosed(st); renderOptions(); }
+$('#optCollapseAll').addEventListener('click', () => { setClosed(new Set(opts ? opts.groups.map(p => p.group) : [])); renderOptions(); });
+$('#optExpandAll').addEventListener('click', () => { setClosed(new Set()); optClosedSec = []; save('optClosedSec', []); renderOptions(); });
+$('#optPage').addEventListener('change', renderOptions);
+$('#optSort').addEventListener('click', () => { optSort = optSort === 'asc' ? 'desc' : 'asc'; save('optSort', optSort); renderOptions(); });
+$('#optRefresh').addEventListener('click', () => loadOptions(false));
+$('#optSelOnly').checked = optSelOnly; $('#optHideNg').checked = optHideNg;
+$('#optSelOnly').addEventListener('change', e => { optSelOnly = e.target.checked; save('optSelOnly', optSelOnly); renderOptions(); });
+$('#optHideNg').addEventListener('change', e => { optHideNg = e.target.checked; save('optHideNg', optHideNg); renderOptions(); render(); });
+let optSize = 300, renderedThumbW = 0; try { optSize = +localStorage.getItem('optSize') || 300; } catch (e) {}
+const optThumbW = () => optSize > 560 ? 1280 : 700;
+function applyOptSize() { $('#optBody').style.setProperty('--og-min', optSize + 'px'); $('#optSize').value = optSize; }
+$('#optSize').addEventListener('input', e => { optSize = +e.target.value; applyOptSize(); });
+$('#optSize').addEventListener('change', () => { try { localStorage.setItem('optSize', optSize); } catch (err) {} if (optThumbW() !== renderedThumbW) renderOptions(); });
+applyOptSize();
+function openOpt(e, i) { e.preventDefault(); if (e.metaKey || e.ctrlKey || e.shiftKey) optPick(e, i); else lbOpen(optVisible, i); return false; }
+
+// ---- Export tab ----------------------------------------------------------------------------------------------------------------
+let ex = store('exportForm', {}), exListing = null;
+const seg = (el, items, cur, on) => { el.innerHTML = items.map(([v, l, tip]) => `<a data-v="${esc(v)}" class="${v === cur ? 'on' : ''}" title="${esc(tip || '')}">${esc(l)}</a>`).join(''); el.querySelectorAll('a').forEach(a => a.addEventListener('click', () => on(a.dataset.v))); };
+function exState() {
+  const tpls = Object.entries(CFG.export.templates || {}).filter(([, t]) => t.enabled !== false);
+  if (!tpls.some(([k]) => k === ex.template)) ex.template = (tpls.find(([k]) => k === CFG.export.default_template) || tpls[0] || [null])[0];
+  const tpl = (CFG.export.templates || {})[ex.template] || {};
+  if (!['jpg', 'pdf'].includes(ex.format)) ex.format = tpl.format || 'pdf';
+  if (ex.template === 'review') ex.format = 'pdf';
+  if (!ex.source || (ex.source !== 'run' && !colById(ex.source))) ex.source = (COLS()[0] || {}).id;
+  if (!ex.which) ex.which = 'selects'; if (!ex.sort) ex.sort = 'desc';
+  ex.groups = ex.groups || []; ex.secs = ex.secs || []; ex.options = ex.options || {};
+  return {tpls, tpl};
+}
+async function loadExport() {
+  const {tpls, tpl} = exState();
+  seg($('#exTpl'), tpls.map(([k, t]) => [k, t.label || k]), ex.template, v => { ex.template = v; delete ex.format; ex.options = {}; saveEx(); loadExport(); });
+  seg($('#exFmt'), ex.template === 'review' ? [['pdf', 'PDF']] : [['jpg', 'JPG'], ['pdf', 'PDF']], ex.format, v => { ex.format = v; saveEx(); loadExport(); });
+  seg($('#exSrc'), [...COLS().map(c => [c.id, c.label]), ['run', 'A run']], ex.source, v => { ex.source = v; ex.groups = []; ex.secs = []; saveEx(); loadExport(); });
+  const col = colById(ex.source);
+  $('#exRun').hidden = ex.source !== 'run'; $('#exVer').hidden = !(col && col.versioned); $('#exGroupsRow').hidden = ex.source === 'run';
+  if (ex.source === 'run') {
+    $('#exRun').innerHTML = runs.filter(r => r.images && r.images.length).slice(0, 200).map(r => `<option value="${esc(r.id)}" ${r.id === ex.run ? 'selected' : ''}>${esc(r.id)} · ${esc(r.title).slice(0, 70)}</option>`).join('');
+    ex.run = $('#exRun').value; $('#exRun').onchange = e => { ex.run = e.target.value; saveEx(); exPreview(); };
+  } else if (col) {
+    if (col.versioned) { if (!CFG._versions.includes(ex.ver)) ex.ver = CFG._cur; seg($('#exVer'), CFG._versions.map(v => [v, v]), ex.ver, v => { ex.ver = v; ex.groups = []; saveEx(); loadExport(); }); }
+    $('#exGroupsLab').textContent = col.kind === 'shots' ? cap(T().units) : col.label;
+    try { exListing = await fetch(`/api/collection?id=${encodeURIComponent(col.id)}&v=${encodeURIComponent(col.versioned ? ex.ver : '')}`).then(r => r.json()); } catch (e) { exListing = {groups: []}; }
+    const names = (exListing.groups || []).map(g => g.group);
+    ex.groups = ex.groups.filter(g => names.includes(g));
+    $('#exGroups').innerHTML = `<button class="chip${!ex.groups.length ? ' on' : ''}" data-g="">all</button>` + names.map(g => `<button class="chip${ex.groups.includes(g) ? ' on' : ''}" data-g="${esc(g)}">${esc(g)}</button>`).join('');
+    $('#exGroups').querySelectorAll('.chip').forEach(c => c.addEventListener('click', e => { const g = c.dataset.g; if (!g) ex.groups = []; else if (e.altKey) ex.groups = [g]; else ex.groups = ex.groups.includes(g) ? ex.groups.filter(x => x !== g) : [...ex.groups, g]; saveEx(); loadExport(); }));
+    const secs = colSecs(col); $('#exSecsRow').hidden = !secs.length;
+    if (secs.length) { if (!ex.secs.length) ex.secs = secs.map(s => s.id);
+      $('#exSecs').innerHTML = secs.map(s => `<button class="chip sec${ex.secs.includes(s.id) ? ' on' : ''}" style="--c:${esc(s.color || col.color)}" data-s="${esc(s.id)}">${esc(s.label)}</button>`).join('');
+      $('#exSecs').querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => { const s = c.dataset.s; ex.secs = ex.secs.includes(s) ? ex.secs.filter(x => x !== s) : [...ex.secs, s]; saveEx(); loadExport(); })); }
+  }
+  seg($('#exWhich'), [['selects', 'Selects only'], ['all', 'All (hide NG)'], ['all_ng', 'Everything']], ex.which, v => { ex.which = v; saveEx(); exPreview(); });
+  seg($('#exSort'), [['desc', 'Newest first'], ['asc', 'Oldest first']], ex.sort, v => { ex.sort = v; saveEx(); });
+  const o = {...tpl, ...ex.options}, num = (k, lab, min, max) => `<label class="small" title="${lab}">${lab} <input type="number" data-k="${k}" value="${o[k] ?? ''}" min="${min}" max="${max}" style="width:58px"></label>`;
+  const tog = (k, lab) => `<button class="chip${o[k] !== false && o[k] !== undefined ? ' on' : ''}" data-k="${k}">${lab}</button>`;
+  const sel_ = (k, lab, vals) => `<label class="small">${lab} <select data-k="${k}">${vals.map(v => `<option ${o[k] === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>`;
+  $('#exOpts').innerHTML = `<span class="lab">Layout</span>` + (ex.template === 'review'
+    ? num('per_row', 'per row', 1, 6) + tog('captions', 'captions') + tog('prompt', 'prompt') + tog('notes', 'notes line') + tog('cover', 'cover page')
+    : num('columns', 'columns', 1, 10) + tog('captions', 'captions') + tog('group_headers', 'group headers') + (ex.format === 'jpg' ? num('thumb', 'tile px', 300, 2000) : ''))
+    + (ex.format === 'pdf' ? '<span class="sep"></span>' + sel_('paper', 'paper', ['letter', 'a4', 'tabloid']) + sel_('orientation', 'orientation', ['landscape', 'portrait']) : '');
+  $('#exOpts').querySelectorAll('[data-k]').forEach(el => { const k = el.dataset.k;
+    if (el.classList.contains('chip')) el.addEventListener('click', () => { ex.options[k] = !(o[k] !== false && o[k] !== undefined); saveEx(); loadExport(); });
+    else el.addEventListener('change', () => { ex.options[k] = el.type === 'number' ? +el.value : el.value; saveEx(); }); });
+  $('#exTitle').value = ex.title || ''; $('#exSub').value = ex.subtitle || '';
+  exPreview(); loadExportList();
+}
+const saveEx = () => save('exportForm', ex);
+function exPreview() {
+  let n = 0, g = 0;
+  if (ex.source === 'run') { const r = runs.find(x => x.id === ex.run); n = r ? r.images.filter(im => ex.which === 'all_ng' || !im.ng).length : 0; g = r ? 1 : 0; }
+  else if (exListing) for (const grp of exListing.groups || []) { if (ex.groups.length && !ex.groups.includes(grp.group)) continue;
+    const fs = grp.files.filter(f => (!ex.secs.length || !colSecs(colById(ex.source)).length || ex.secs.includes(f.section)) && (ex.which === 'selects' ? f.sel : ex.which === 'all' ? !f.ng : true)); if (fs.length) { g++; n += fs.length; } }
+  $('#exPreview').textContent = `${plural(g, 'group')} · ${plural(n, 'image')}${ex.template === 'review' ? ` · about ${g + ((CFG.export.templates.review || {}).cover !== false ? 1 : 0)} pages` : ''}`;
+  $('#exGo').disabled = !n;
+}
+$('#exTitle').addEventListener('change', e => { ex.title = e.target.value; saveEx(); }); $('#exSub').addEventListener('change', e => { ex.subtitle = e.target.value; saveEx(); });
+$('#exGo').addEventListener('click', async () => {
+  $('#exStatus').textContent = 'Building…'; $('#exGo').disabled = true;
+  const body = {template: ex.template, format: ex.format, images: ex.which, sort: ex.sort, title: ex.title, subtitle: ex.subtitle, options: ex.options,
+                scope: ex.source === 'run' ? {run: ex.run} : {collection: ex.source, version: ex.ver, groups: ex.groups, sections: ex.secs}};
+  try { const r = await post('/api/export', body);
+    if (r.ok) { $('#exStatus').innerHTML = `Exported <a href="${r.url}" target="_blank" style="color:var(--accent)">${esc(r.file)}</a> · ${plural(r.images, 'image')}`; window.open(r.url, '_blank'); loadExportList(); }
+    else $('#exStatus').textContent = 'Export failed: ' + r.error;
+  } catch (e) { $('#exStatus').textContent = 'Export failed: ' + e; }
+  $('#exGo').disabled = false;
+});
+async function loadExportList() {
+  const j = await fetch('/api/exports').then(r => r.json()).catch(() => ({exports: []}));
+  $('#exDir').textContent = j.dir ? '· ' + j.dir : '';
+  const fmtB = b => b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.round(b / 1e3) + ' KB';
+  $('#exList').innerHTML = (j.exports || []).map(e => `<div class="ex"><a class="name" href="${e.url}" target="_blank" title="${esc(e.name)}">${esc(e.name)}</a><span class="small">${new Date(e.mtime * 1000).toLocaleString([], {dateStyle: 'short', timeStyle: 'short'})} · ${fmtB(e.size)}</span>
+    <button class="ico" title="Show in Finder" onclick="revealIm({src:'${esc(e.src)}'})">${FOLDER_ICO}</button><button class="ico" title="Delete this export" onclick="delExport('${esc(e.name)}')">✕</button></div>`).join('') || '<span class="small">none yet</span>';
+}
+async function delExport(name) { if (!confirm(`Delete ${name}?`)) return; const r = await post('/api/export/delete?name=' + encodeURIComponent(name)); toast(r.ok ? 'Deleted' : 'Delete failed: ' + r.error); loadExportList(); }
+
+// ---- Costs tab -------------------------------------------------------------------------------------------------------------
+let costPeriod = store('costPeriod', 'all'), costData = null;
+async function loadCosts(quiet) {
+  document.querySelectorAll('#costPeriod a').forEach(a => a.classList.toggle('on', a.dataset.v === costPeriod));
+  try { costData = await fetch('/api/costs?period=' + costPeriod).then(r => r.json()); } catch (e) { $('#costBody').innerHTML = `<p class="small">Could not load: ${esc(e)}</p>`; return; }
+  renderCosts(); if (!costData.balance) refreshBalance(false);
+  if (!quiet) toast('Refreshed', 1500, false);
+}
+async function refreshBalance(force) {
+  const b = await fetch('/api/costs/balance' + (force ? '?refresh=1' : '')).then(r => r.json()).catch(e => ({error: String(e)}));
+  if (costData) { costData.balance = b; renderCosts(); }
+}
+function renderCosts() {
+  const d = costData, t = d.totals, cpu = d.credits_per_usd || 211, me = d.person;
+  const bal = d.balance, balTxt = !bal ? '…' : bal.error ? 'n/a' : bal.pending ? '…' : usd(bal.usd);
+  const budget = d.budget_usd, spent = d.spent_all_usd || 0, pct = budget ? Math.min(100, Math.round(100 * spent / budget)) : 0;
+  const team = d.by_person || [], multi = team.length > 1 || (d.team || []).length;
+  const cards = `<div class="cards">
+    <div class="card gold"><div class="k">Project total${costPeriod !== 'all' ? ' · ' + costPeriod + ' days' : ''}</div><div class="v">${usd(t.total_usd)}</div><div class="s">${usd(t.usd)} runs · ${usd(t.expenses_usd)} expenses · ${Math.round(t.credits)} credits</div></div>
+    ${multi ? `<div class="card"><div class="k">My usage</div><div class="v">${usd(t.mine_usd)}</div><div class="s">${esc(me)}</div></div>` : ''}
+    <div class="card"><div class="k">Billed runs</div><div class="v">${t.runs}</div><div class="s">${plural(t.images, 'image')} · ${t.selects} selects${d.unbilled ? ` · <span style="color:var(--warn)">${d.unbilled} unbilled</span>` : ''}</div></div>
+    <div class="card"><div class="k">Per image</div><div class="v">${t.images ? usd(t.usd / t.images, 3) : '–'}</div><div class="s">${t.images && t.selects ? usd(t.usd / t.selects, 2) + ' per select' : ''}</div></div>
+    <div class="card ${bal && !bal.error && bal.usd != null ? (bal.usd < 10 ? 'err' : bal.usd < 30 ? 'warn' : 'ok') : ''}"><div class="k">Balance (shared account)</div><div class="v">${balTxt}</div><div class="s">${bal && bal.credits != null ? Math.round(bal.credits) + ' credits' : bal && bal.error ? esc(bal.error).slice(0, 60) : ''}${bal && bal.checked ? ' · ' + fmtT(bal.checked) : ''}</div></div>
+    ${budget ? `<div class="card ${spent > budget ? 'err' : pct > 80 ? 'warn' : ''}"><div class="k">Budget</div><div class="v">${usd(Math.max(0, budget - spent))} left</div><div class="s">${usd(spent)} of ${usd(budget)} · ${pct}%</div><div class="budget"><i class="${spent > budget ? 'over' : pct > 80 ? 'warn' : ''}" style="width:${pct}%"></i></div></div>` : ''}
+  </div>`;
+  const th = (cols) => '<tr>' + cols.map(([l, n]) => `<th class="${n ? 'num' : ''}">${l}</th>`).join('') + '</tr>';
+  const aggRows = (rows, labelOf) => rows.map(b => `<tr><td>${labelOf(b)}</td><td class="num">${b.runs}</td><td class="num">${b.images}</td><td class="num">${b.gen_n ? fmtSec(b.gen / b.gen_n) : '–'}</td><td class="num">${b.gen_n && b.images ? (b.gen / b.images).toFixed(0) + 's' : '–'}</td><td class="num">${usd(b.usd, 3)}</td><td class="num">${b.images ? usd(b.usd / b.images, 3) : '–'}</td><td class="num">${Math.round(b.credits)}</td><td class="num">${b.selects}</td><td class="num">${b.images ? Math.round(100 * b.selects / b.images) + '%' : '–'}</td></tr>`).join('');
+  const aggHead = th([['', 0], ['runs', 1], ['images', 1], ['avg gen / run', 1], ['sec / image', 1], ['$', 1], ['$ / image', 1], ['credits', 1], ['★ selects', 1], ['select rate', 1]]);
+  const teamTbl = `<div class="panel"><h2>Team</h2>
+    <table class="tbl">${th([['person', 0], ['runs', 1], ['images', 1], ['selects', 1], ['credits', 1], ['$ runs', 1], ['$ expenses', 1], ['total', 1], ['ledger', 0], ['', 0]])}
+    ${team.map(b => { const l = (d.team || []).find(x => x.person === b.key); return `<tr><td>${esc(b.key)}${b.key === me ? ' <span class="small">(me)</span>' : ''}</td><td class="num">${b.runs}</td><td class="num">${b.images}</td><td class="num">${b.selects}</td><td class="num">${Math.round(b.credits)}</td><td class="num">${usd(b.usd)}</td><td class="num">${usd(b.expenses_usd)}</td><td class="num"><b>${usd(b.total_usd)}</b></td><td class="dim">${b.key === me ? 'this machine' : l ? `${esc(l.via)} · ${l.exported ? new Date(l.exported).toLocaleDateString() : ''}` : ''}</td><td>${l && l.via === 'import' ? `<a class="lnk small" onclick="forgetPerson('${esc(b.key)}')">forget</a>` : ''}</td></tr>`; }).join('')}
+    <tr><td><b>Project</b></td><td class="num">${t.runs}</td><td class="num">${t.images}</td><td class="num">${t.selects}</td><td class="num">${Math.round(t.credits)}</td><td class="num">${usd(t.usd)}</td><td class="num">${usd(t.expenses_usd)}</td><td class="num"><b>${usd(t.total_usd)}</b></td><td colspan="2"></td></tr></table>
+    <p class="small">${d.shared_dir ? `Shared ledger folder: <code>${esc(d.shared_dir)}</code> ${d.shared_ok ? '(reachable: every machine\'s ledger is read from here)' : '<span style="color:var(--err)">(not reachable now)</span>'}` : 'No shared folder set (Settings → Costs → shared folder): teammates send you their export and you import it here; the newest export per person counts, nothing is counted twice.'} Comfy bills one shared account, so each machine can only attribute its own runs; this table adds them up.</p></div>`;
+  const byDay = d.by_day || [], maxDay = Math.max(1, ...byDay.map(x => x.usd));
+  const chart = byDay.length ? `<div class="panel"><h2>By day</h2><div class="bars">${byDay.map(x => `<div style="height:${Math.max(2, Math.round(100 * x.usd / maxDay))}%"><span>${x.day} · ${usd(x.usd)}</span></div>`).join('')}</div><div class="small" style="display:flex;justify-content:space-between"><span>${byDay[0].day}</span><span>${byDay[byDay.length - 1].day}</span></div></div>` : '';
+  const exps = `<div class="panel"><h2>Other expenses</h2>
+    <table class="tbl">${th([['date', 0], ['service', 0], ['note', 0], ['person', 0], ['$', 1], ['', 0]])}${(d.expenses || []).map(e => `<tr><td class="mono">${esc(e.day)}</td><td>${esc(e.model)}</td><td>${esc(e.title || '')}</td><td class="dim">${esc(e.person)}</td><td class="num">${usd(e.usd)}</td><td>${e.person === me ? `<a class="lnk small" onclick="delExpense('${esc(e.id)}')">remove</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="dim">none</td></tr>'}</table>
+    <div class="row" style="margin-top:10px"><span class="lab">Add</span><input type="date" id="xDate" value="${new Date().toISOString().slice(0, 10)}"><input type="text" id="xService" placeholder="service (OpenArt, Runway, stock…)" style="width:200px"><input type="number" id="xUsd" placeholder="$" step="0.01" style="width:90px"><input type="text" id="xNote" placeholder="what for" style="width:260px"><button class="btn" onclick="addExpense()">Add expense</button></div></div>`;
+  const recent = `<div class="panel"><h2>Billed runs <span class="small">· newest first</span></h2><table class="tbl">${th([['date', 0], ['run', 0], ['person', 0], [cap(T().unit), 0], ['title', 0], ['model', 0], ['images', 1], ['★', 1], ['credits', 1], ['$', 1]])}
+    ${(d.recent || []).map(r => `<tr><td class="mono">${esc(r.day)}</td><td class="mono">${esc(r.id)}</td><td class="dim">${esc(r.person)}</td><td>${esc(r.group)}</td><td title="${esc(r.title || '')}">${esc((r.title || '').slice(0, 70))}</td><td class="dim">${esc(r.model)}</td><td class="num">${r.images}</td><td class="num">${r.selects}</td><td class="num">${Math.round(r.credits)}</td><td class="num">${usd(r.usd, 3)}</td></tr>`).join('') || '<tr><td colspan="10" class="dim">no billed runs yet</td></tr>'}</table></div>`;
+  $('#costBody').innerHTML = cards + teamTbl + `<div class="two"><div class="panel"><h2>By model</h2><table class="tbl">${aggHead}${aggRows(d.by_model, b => esc(b.key))}</table></div>
+    <div class="panel"><h2>By ${esc(T().unit)}</h2><table class="tbl">${aggHead}${aggRows(d.by_group, b => esc(b.key))}</table></div></div>` + chart + exps + recent;
+  $('#costMeta').innerHTML = `${esc(d.client || '')}${d.client ? ' · ' : ''}${esc(d.project || '')} · log: <code>${esc(d.log || '')}</code>`;
+  $('#costBackfill').textContent = `⟲ Backfill costs${d.unbilled ? ' (' + d.unbilled + ')' : ''}`;
+}
+async function addExpense() {
+  const b = {date: $('#xDate').value, service: $('#xService').value, usd: +$('#xUsd').value, note: $('#xNote').value};
+  if (!b.usd) return toast('Enter an amount');
+  const r = await post('/api/costs/expense', b); toast(r.ok ? 'Expense added' : 'Failed: ' + r.error); loadCosts(true);
+}
+async function delExpense(id) { const r = await post('/api/costs/expense/delete?id=' + encodeURIComponent(id)); toast(r.ok ? 'Removed' : 'Failed'); loadCosts(true); }
+async function forgetPerson(who) { if (!confirm(`Forget the imported ledger of ${who}?`)) return; const r = await post('/api/costs/import/delete?person=' + encodeURIComponent(who)); toast(r.ok ? 'Forgotten' : 'Failed: ' + r.error); loadCosts(true); }
+document.querySelectorAll('#costPeriod a').forEach(a => a.addEventListener('click', () => { costPeriod = a.dataset.v; save('costPeriod', costPeriod); loadCosts(true); }));
+$('#costRefresh').addEventListener('click', () => loadCosts(false));
+$('#costBalance').addEventListener('click', () => { toast('Asking Comfy for the balance…', 3000, false); refreshBalance(true); });
+$('#costBackfill').addEventListener('click', async () => { toast('Looking up billed costs… this can take a minute', 60000, false); const r = await post('/api/costs/backfill'); toast(r.ok ? `Backfill: ${r.billed} of ${r.checked} runs billed${r.errors.length ? ' · errors: ' + r.errors[0] : ''}` : 'Backfill failed: ' + r.error, 8000); loadCosts(true); });
+$('#costExport').addEventListener('click', async () => { const r = await post('/api/costs/export?format=json'); if (r.ok) { toast(`Exported ${r.file} → exports/`, 6000, false); } else toast('Export failed: ' + r.error); });
+$('#costCsv').addEventListener('click', async () => { const r = await post('/api/costs/export?format=csv'); if (r.ok) { toast(`Exported ${r.file} → exports/`, 6000, false); window.open(r.url, '_blank'); } else toast('Export failed: ' + r.error); });
+$('#costImportFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { const data = JSON.parse(await f.text()); const r = await post('/api/costs/import', data); toast(r.ok ? `Imported ${r.person}: ${plural(r.rows, 'run')} (exported ${r.exported ? new Date(r.exported).toLocaleString() : '?'})` : 'Import failed: ' + r.error, 7000); }
+  catch (err) { toast('Import failed: ' + err, 7000); }
+  e.target.value = ''; loadCosts(true);
+});
+
+// ---- Settings tab ------------------------------------------------------------------------------------------------------------
+let draft = null;
+const getP = (o, p) => p.split('.').reduce((x, k) => (x == null ? undefined : x[k]), o);
+const setP = (o, p, v) => { const ks = p.split('.'); let x = o; for (const k of ks.slice(0, -1)) x = x[k] = (x[k] && typeof x[k] === 'object') ? x[k] : {}; x[ks[ks.length - 1]] = v; };
+const FIELDS = [
+  ['Project', [['project.name', 'text', 'Project name', 'used in the credit log and export titles'], ['project.code', 'text', 'Code', 'letters, digits, - and _: names folders and export files'], ['project.title', 'text', 'Monitor title'], ['project.client', 'text', 'Client']]],
+  ['Terminology', [['terms.unit', 'text', 'Unit (singular)', 'shot, page, scene, asset…: used in labels and as the run.py --<unit> flag'], ['terms.units', 'text', 'Unit (plural)']]],
+  ['Server', [['server.port', 'number', 'Port', 'restart the server after changing it'], ['server.poll_ms', 'number', 'Poll interval (ms)']]],
+  ['Paths', [['paths.output_root', 'text', 'Output root', 'the project\'s subtree of ComfyUI\'s output folder; {code} and ~ allowed'], ['paths.output_prefix', 'text', 'Save prefix', 'what graphs put in front of their save path (PROJ/)'],
+             ['paths.comfy_input', 'text', 'ComfyUI input'], ['paths.comfy_bin', 'text', 'comfy-cli binary'], ['paths.runs', 'text', 'Run records', '{monitor}/runs'], ['paths.workflows', 'text', 'Workflows'], ['paths.exports', 'text', 'Exports'],
+             ['paths.selects_root', 'text', 'Selects root', 'where copy-mode selects go (a client Dropbox): {selects_root} in collection destinations'], ['paths.moved_lookup', 'list', 'Moved-file lookup', 'folders (one per line) where files get moved by hand; the monitor finds a run\'s files there by name']]],
+  ['Versions', [['versions.enabled', 'bool', 'Versioned rounds', 'V1, V2…: each version is a frozen round of work'], ['versions.current', 'text', 'Current version', 'V3'], ['versions.first', 'number', 'First version with this layout'],
+                ['versions.folder', 'text', 'Version folder', 'V{n}'], ['versions.staging', 'text', 'Remote staging folder', 'V{n}_Staging: where a remote server saves before collect.py moves the files into the version folder'], ['versions.file_suffix', 'text', 'File suffix', '_v{n}, part of collected file names'], ['versions.refuse_frozen', 'bool', 'Refuse graphs that save into an older version', 'run.py --retarget moves them to the current one']]],
+  ['Selects and naming', [['selects.tags.select', 'select', 'Select tag', '', ['Yellow', 'Green', 'Purple', 'Blue', 'Orange', 'Gray', 'Red']], ['selects.tags.ng', 'select', 'NG tag', '', ['Red', 'Orange', 'Gray', 'Purple', 'Blue', 'Green', 'Yellow']], ['naming.strip_trailing_underscore', 'bool', 'Strip the trailing underscore', 'name_00001_.png → name_00001.png']]],
+  ['Export', [['export.enabled', 'bool', 'Export tab'], ['export.default_template', 'select', 'Default template', '', ['contact', 'review']], ['export.footer', 'text', 'Footer', '{client} {title} {code} {date}'],
+              ['export.templates.contact.enabled', 'bool', 'Contact sheet'], ['export.templates.contact.label', 'text', 'Contact sheet label'], ['export.templates.contact.format', 'select', 'Contact default format', '', ['jpg', 'pdf']], ['export.templates.contact.columns', 'number', 'Contact columns'], ['export.templates.contact.thumb', 'number', 'Contact tile px (JPG)'], ['export.templates.contact.captions', 'bool', 'Contact captions'], ['export.templates.contact.group_headers', 'bool', 'Contact group headers'],
+              ['export.templates.review.enabled', 'bool', 'Review PDF'], ['export.templates.review.label', 'text', 'Review PDF label'], ['export.templates.review.per_row', 'number', 'Review images per row'], ['export.templates.review.captions', 'bool', 'Review captions'], ['export.templates.review.prompt', 'bool', 'Review prompt excerpt'], ['export.templates.review.notes', 'bool', 'Review notes line'], ['export.templates.review.cover', 'bool', 'Review cover page'],
+              ['export.templates.review.paper', 'select', 'Paper', '', ['letter', 'a4', 'tabloid']], ['export.templates.review.orientation', 'select', 'Orientation', '', ['landscape', 'portrait']]]],
+  ['Costs', [['costs.enabled', 'bool', 'Costs tab'], ['costs.bill_runs', 'bool', 'Bill every API run', 'run.py looks the charged credits up after each run and logs them'], ['costs.person', 'text', 'Person', 'whose usage this machine\'s runs are (default: the macOS account name)'],
+             ['costs.client', 'text', 'Client (credit log)'], ['costs.project', 'text', 'Project (credit log)', 'rows of the shared credit log with this project name count here'], ['costs.budget_usd', 'number', 'Budget (USD)', 'leave empty for none'],
+             ['costs.shared_dir', 'text', 'Shared ledger folder', 'a folder every teammate can reach: each machine writes its ledger there automatically'], ['costs.credit_log', 'text', 'Credit log CSV'], ['costs.credits_per_usd', 'number', 'Credits per USD'], ['costs.balance_cache_s', 'number', 'Balance cache (s)']]],
+  ['Runs', [['runs.collapse_after', 'number', 'Collapse cards after', 'the n newest run cards start open'], ['runs.ref_roles', 'json', 'Source image roles', '[["regex", "label"], …]: what a source image is, from its file name'], ['runs.extra_categories', 'json', 'Extra run categories', '[{"id", "label", "regex", "color"}]: output paths outside the collections']]],
+  ['Engines', [['engines.api_nodes_extra', 'list', 'Extra API node classes', 'class_type names that spend credits (one per line)'], ['engines.generator_nodes_extra', 'list', 'Extra generator node classes', 'their start marks the beginning of generation (timing)']]],
+];
+function fieldHtml(f) {
+  const [p, type, label, hint, opts_] = f, v = getP(draft, p), id = 'f_' + p.replace(/\./g, '_');
+  let inp;
+  if (type === 'bool') inp = `<label class="chip${v ? ' on' : ''}" data-p="${p}" data-type="bool">${v ? 'on' : 'off'}</label>`;
+  else if (type === 'select') inp = `<select data-p="${p}">${opts_.map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  else if (type === 'number') inp = `<input type="number" data-p="${p}" data-type="number" value="${v ?? ''}" step="any">`;
+  else if (type === 'list') inp = `<textarea data-p="${p}" data-type="list" rows="2">${esc((v || []).join('\n'))}</textarea>`;
+  else if (type === 'json') inp = `<textarea data-p="${p}" data-type="json" rows="4">${esc(JSON.stringify(v ?? null, null, 1))}</textarea>`;
+  else inp = `<input type="text" data-p="${p}" value="${esc(v ?? '')}">`;
+  return `<span class="lab">${esc(label)}</span><div>${inp}</div>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}`;
+}
+const COL_PRESETS = {
+  shots: () => ({id: 'shots', label: cap(T().units), kind: 'shots', dir: CFG.versions.enabled ? '{version}' : '', group_regex: '^[A-Za-z0-9][^/]*$', color: '#ffcf33', file_name: '{group}{file_suffix}_{n:03d}',
+                 sections: [{id: 'option', label: 'Options', sub: '', color: '#ffcf33'}, {id: 'edit', label: 'Edits', sub: '_edits', color: '#c792ea', compare: 'source'}, {id: 'plate', label: 'Plates', sub: '_plates', color: '#7fd7c4', compare: 'hash'}], select: {mode: 'tag', dest: '{selects_root}/{version}/{group}', section_dest: {}, unselect: 'z_old'}}),
+  folders: () => ({id: 'refs', label: 'References', kind: 'folders', dir: 'References', depth: 1, color: '#3ddc84', section_from_name: '', select: {mode: 'tag'}}),
+  tests: () => ({id: 'tests', label: 'Testing', kind: 'folders', dir: '__TESTING', depth: 0, color: '#8b95a3', select: {mode: 'tag'}}),
+};
+function colHtml(c, i) {
+  const sel = c.select || {}, shots = c.kind === 'shots';
+  const txt = (k, label, hint, w) => `<span class="lab">${label}</span><div><input type="text" data-c="${i}" data-k="${k}" value="${esc(getP(c, k) ?? '')}"${w ? ` style="max-width:${w}px"` : ''}>${hint ? ` <span class="small">${esc(hint)}</span>` : ''}</div>`;
+  const segm = (k, vals) => `<span class="vtoggle">${vals.map(([v, l]) => `<a data-c="${i}" data-k="${k}" data-v="${v}" class="${getP(c, k) === v ? 'on' : ''}">${l}</a>`).join('')}</span>`;
+  const secs = (c.sections || []).map((s, j) => `<div class="secrow"><input type="text" data-c="${i}" data-s="${j}" data-k="id" value="${esc(s.id)}" placeholder="id"><input type="text" data-c="${i}" data-s="${j}" data-k="label" value="${esc(s.label || '')}" placeholder="Label"><input type="text" data-c="${i}" data-s="${j}" data-k="sub" value="${esc(s.sub || '')}" placeholder="subfolder ('' = base)"><input type="color" data-c="${i}" data-s="${j}" data-k="color" value="${esc(s.color || c.color || '#8b95a3')}"><select data-c="${i}" data-s="${j}" data-k="compare"><option value="">compare: —</option><option value="source" ${s.compare === 'source' ? 'selected' : ''}>compare: source image</option><option value="hash" ${s.compare === 'hash' ? 'selected' : ''}>compare: by content</option></select><button class="ico" title="Remove section" onclick="colSec(${i},${j},'del')">✕</button></div>`).join('');
+  return `<div class="colcard"><div class="colhead"><span class="swatch" style="background:${esc(c.color || '#8b95a3')}"></span><b>${esc(c.id)}</b><span class="small">${esc(c.label)} · ${shots ? 'groups with sections' : 'plain folders'}</span><span class="spacer"></span>
+      <button class="btn quiet" onclick="colMove(${i},-1)" ${i === 0 ? 'disabled' : ''}>↑</button><button class="btn quiet" onclick="colMove(${i},1)" ${i === draft.collections.length - 1 ? 'disabled' : ''}>↓</button><button class="btn danger" onclick="colDel(${i})">Remove</button></div>
+    <div class="form">
+      ${txt('id', 'Id', 'short, unique, no spaces', 160)}${txt('label', 'Label', 'the Selects tab segment', 220)}
+      <span class="lab">Kind</span><div>${segm('kind', [['shots', cap(T().units) + ' with sections'], ['folders', 'Plain folders']])}</div>
+      ${txt('dir', 'Folder', 'under the output root; {version} for a versioned collection, empty = the root itself', 300)}
+      <span class="lab">Color</span><div><input type="color" data-c="${i}" data-k="color" value="${esc(c.color || '#8b95a3')}"></div>
+      ${shots ? txt('group_regex', 'Group id pattern', 'regex a subfolder must match to count as a ' + T().unit + ' (^(SC\\d+[A-Z]?|Cover)$)', 360) + txt('file_name', 'Collected file name', '{group}{file_suffix}_{n:03d}', 260)
+              : txt('depth', 'Depth', '1 = subfolders are groups · 2 = one nested level too · 0 = every folder with images', 60) + txt('section_from_name', 'Section from file name', 'regex with one group, applied to the name without its counter (_ref_(.+)$); empty = no sections', 300) + txt('section_order', 'Section order', 'prefixes in display order, comma separated', 300)}
+      ${shots ? `<span class="lab">Sections</span><div>${secs}<a class="lnk small" onclick="colSec(${i},-1,'add')">+ add section</a></div>` : ''}
+      <span class="lab">Select mode</span><div>${segm('select.mode', [['tag', 'Finder tag only'], ['copy', 'Copy to a folder']])}</div>
+      ${sel.mode === 'copy' ? txt('select.dest', 'Select destination', '{selects_root}/{version}/{group} · {project} {staging} {group} {section} allowed', 420) + (shots ? txt('select.section_dest', 'Per-section destinations', 'JSON {"plate": "…/_plates"}; others use the destination above', 420) : txt('select.dest_map', 'Group name map', 'JSON {"Kit": "Props"}: a group whose destination folder is named differently', 300))
+        + `<span class="lab">On unselect</span><div>${segm('select.unselect', [['z_old', 'Move to Z_OLD/'], ['delete', 'Delete the copy'], ['keep', 'Keep it']])}</div>` : ''}
+    </div></div>`;
+}
+function colSec(i, j, what) {
+  const c = draft.collections[i]; c.sections = c.sections || [];
+  if (what === 'add') c.sections.push({id: 'section' + (c.sections.length + 1), label: 'Section ' + (c.sections.length + 1), sub: '_section' + (c.sections.length + 1), color: c.color});
+  else c.sections.splice(j, 1);
+  renderSettings();
+}
+function colMove(i, d) { const a = draft.collections; const j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; renderSettings(); }
+function colDel(i) { if (!confirm(`Remove collection "${draft.collections[i].id}" from the settings? Files on disk are not touched.`)) return; draft.collections.splice(i, 1); renderSettings(); }
+function colAdd(kind) { const c = COL_PRESETS[kind](); let n = 2; while (draft.collections.some(x => x.id === c.id)) c.id = COL_PRESETS[kind]().id + n++; draft.collections.push(c); renderSettings(); }
+async function loadSettings() {
+  CFG = await fetch('/api/config').then(r => r.json());
+  draft = JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(CFG).filter(([k]) => !k.startsWith('_')))));
+  draft.collections = draft.collections.map(c => { const o = {...c}; delete o.versioned; return o; });
+  $('#setPath').innerHTML = `<code>${esc(CFG._config_path)}</code> · template ${esc(CFG.template_version || '?')}`;
+  renderSettings();
+}
+function renderSettings() {
+  const secs = FIELDS.map(([name, fs]) => `<div class="setsec"><h3>${esc(name)}${name === 'Versions' && draft.versions.enabled ? ` <span class="small">current ${esc(draft.versions.current)}</span><button class="btn quiet" onclick="bumpVersion()" title="Start the next round: the current version becomes frozen and new renders go to the next folder">Start next version</button>` : ''}</h3><div class="form">${fs.map(fieldHtml).join('')}</div></div>`).join('');
+  const cols = `<div class="setsec"><h3>Collections <span class="small">· what the Selects tab shows and how run outputs are classified; the first one is the default</span></h3>
+    ${draft.collections.map(colHtml).join('')}
+    <div class="row"><span class="lab">Add</span><button class="chip" onclick="colAdd('shots')">${esc(cap(T().units))} with sections</button><button class="chip" onclick="colAdd('folders')">Plain folder groups</button><button class="chip" onclick="colAdd('tests')">Test folders</button></div></div>`;
+  const servers = `<div class="setsec"><h3>Servers <span class="small">· <code>${esc(CFG._servers_path)}</code> · restart run.py's callers after changing ports</span></h3><textarea id="setServers" rows="14">${esc(JSON.stringify(CFG._servers, null, 2))}</textarea><div class="row" style="margin-top:6px"><button class="btn" onclick="saveServers()">Save servers.json</button><span class="small">kind local | aws | ssh · port = local (tunnel) port · output_root = where this machine reads that server's files · engines = api, flux2, open_edit, other · api_models / auto_select / reservation: see docs/CONFIG.md</span></div></div>`;
+  const raw = `<div class="setsec"><details class="adv"><summary>Advanced: the whole project.json</summary><textarea id="setRaw" rows="24" style="margin-top:8px">${esc(JSON.stringify(draft, null, 1))}</textarea><div class="row" style="margin-top:6px"><button class="btn" onclick="applyRaw()">Apply JSON to the form</button><span class="small">then Save settings</span></div></details></div>`;
+  $('#setBody').innerHTML = `<div class="errs" id="setErrs" hidden></div>` + secs + cols + servers + raw;
+  $('#setBody').querySelectorAll('[data-p]').forEach(el => {
+    const p = el.dataset.p, type = el.dataset.type;
+    if (type === 'bool') el.addEventListener('click', () => { setP(draft, p, !getP(draft, p)); el.classList.toggle('on'); el.textContent = getP(draft, p) ? 'on' : 'off'; });
+    else el.addEventListener('change', () => { let v = el.value;
+      if (type === 'number') v = v === '' ? null : +v; else if (type === 'list') v = v.split('\n').map(s => s.trim()).filter(Boolean);
+      else if (type === 'json') { try { v = JSON.parse(v); el.style.borderColor = ''; } catch (e) { el.style.borderColor = 'var(--err)'; return; } }
+      setP(draft, p, v); });
+  });
+  $('#setBody').querySelectorAll('[data-c]').forEach(el => {
+    const i = +el.dataset.c, k = el.dataset.k, c = draft.collections[i];
+    if (el.tagName === 'A') el.addEventListener('click', () => { setP(c, k, el.dataset.v); renderSettings(); });
+    else el.addEventListener('change', () => { let v = el.value;
+      if (el.dataset.s !== undefined) { c.sections[+el.dataset.s][k] = v; if (k === 'compare' && !v) delete c.sections[+el.dataset.s].compare; return; }
+      if (k === 'depth') v = +v; if (k === 'section_order') v = v.split(',').map(s => s.trim()).filter(Boolean);
+      if (k === 'select.section_dest' || k === 'select.dest_map') { try { v = JSON.parse(v || '{}'); el.style.borderColor = ''; } catch (e) { el.style.borderColor = 'var(--err)'; return; } }
+      setP(c, k, v); if (k === 'id' || k === 'label' || k === 'color') renderSettings(); });
+  });
+}
+function applyRaw() { try { const j = JSON.parse($('#setRaw').value); draft = j; renderSettings(); toast('Applied to the form; now Save settings', 3000, false); } catch (e) { toast('Not valid JSON: ' + e, 6000); } }
+$('#setSave').addEventListener('click', async () => {
+  $('#setStatus').textContent = 'Saving…';
+  const r = await post('/api/config', draft);
+  const box = $('#setErrs'); box.hidden = r.ok; box.textContent = (r.errors || []).join('\n');
+  $('#setStatus').textContent = r.ok ? 'Saved · applied' : `${(r.errors || []).length} problem(s), nothing saved`;
+  if (r.ok) { await loadConfig(); await loadSettings(); poll.sig = null; poll(); toast('Settings saved', 2500, false); } else toast('Settings not saved: ' + (r.errors || [])[0], 6000);
+});
+$('#setRevert').addEventListener('click', () => { loadSettings(); $('#setStatus').textContent = 'Reverted'; });
+async function saveServers() { try { const j = JSON.parse($('#setServers').value); const r = await post('/api/servers', j); toast(r.ok ? 'servers.json saved' : 'Not saved: ' + r.error, 4000); if (r.ok) loadSettings(); } catch (e) { toast('Not valid JSON: ' + e, 6000); } }
+async function bumpVersion() {
+  const nxt = (draft.versions.folder || 'V{n}').replace('{n}', (parseInt((draft.versions.current || '').replace(/\D/g, '')) || 1) + 1);
+  if (!confirm(`Start ${nxt}? ${draft.versions.current} becomes frozen (run.py refuses graphs that save into it unless --retarget), and new renders go to ${nxt}. Unsaved form changes are kept but not saved.`)) return;
+  const r = await post('/api/config/bump'); toast(r.ok ? `Now on ${r.current}` : 'Failed: ' + (r.error || (r.errors || [])[0]), 5000); if (r.ok) { await loadConfig(); loadSettings(); }
+}
+
+// ---- boot ----------------------------------------------------------------------------------------------------------------------
+$('#runGroup').addEventListener('change', e => { runGroup = e.target.value; save('runGroup', runGroup); render(); });
+$('#runRefresh').addEventListener('click', async () => { poll.sig = null; await poll(); toast(`Refreshed · ${runs.length} runs`, 2000, false); });
+$('#autoCollapse').addEventListener('change', render);
+function setHdr() {
+  const st = document.documentElement.style;
+  st.setProperty('--hdr', document.querySelector('header').offsetHeight + 'px');
+  st.setProperty('--bar', ($('#view-selects').hidden ? 0 : $('#optBar').offsetHeight) + 'px');
+}
+window.addEventListener('resize', setHdr);
+window.addEventListener('hashchange', () => { const h = location.hash.replace('#', ''); if (TABS.includes(h)) showTab(h); });
+(async () => {
+  await loadConfig();
+  const h = location.hash.replace('#', ''); showTab(h === 'options' ? 'selects' : h);
+  setHdr(); await poll(); setInterval(poll, (CFG.server && CFG.server.poll_ms) || 2500);
+})();
+</script>
+</body>
+</html>
