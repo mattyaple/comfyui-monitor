@@ -92,6 +92,9 @@ an optional leading `{code}/`. A path no collection matches is category `other` 
 | `extra_categories` | `[{"id", "label", "regex", "color"}]`: output paths outside the collections that still deserve a category (LoRA datasets); the first regex group is the group name |
 | `ref_roles` | `[["regex", "label"], …]`: what a source image is, from its file name (mask, plate, face, body…), shown on run cards and in the lightbox; `plate` and `mask` roles are also used for hold-to-compare when no section match exists |
 | `collapse_after` | the n newest run cards start open |
+| `watch_ui` | true: the server's watcher (`watch.py`) polls every local server's `/queue` and `/history` and writes a record for every prompt queued from the ComfyUI interface that saves into this project's output tree (`via: "ui"`, a `ui` pill on the card). Prompts saving elsewhere are ignored, so several monitors can watch one ComfyUI |
+| `ui_watch_interval_s`, `ui_history_items`, `ui_lookback_h` | poll interval (4 s), history entries read per poll (40), and how old a history entry may be to still get a record (24 h) |
+| `ui_title_node` | the title of a string node (DF_Text, Text, a primitive) in the UI graph whose value names the run on its card (`Run Title`); without one the card is named after the save folder |
 
 ## selects
 

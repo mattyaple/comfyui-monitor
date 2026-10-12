@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-12)
 
+- New: runs queued from the ComfyUI interface are recorded too (`monitor/watch.py`, `runs.watch_ui`, on by default). The
+  watcher polls `/queue` and `/history` of every local server, builds the same record run.py would (prompt, references,
+  model, seed, batch, outputs, timing, billed cost) for prompts that save into the project's output tree, marks them
+  `via: "ui"` (a `ui` pill) and keeps their API graph under `workflows/ui/` for re-rolls. A string node titled
+  `Run Title` in the workflow names the card. `/api/watch` shows the watcher's status and log.
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run
   records got `KeyError: '_grx'` (HTTP 500) on the Selects tab and `/api/collection` until the first run was indexed.
   Found setting up the Peter Millar AI Shoes monitor (2026-10-12).

@@ -552,6 +552,7 @@ function runHtml(r, idx) {
     <div class="head" onclick="toggleRun('${r.id}')">
       <span class="pill ${r.status}">${r.status}</span>
       <span class="pill" style="${srvStyle(r.server)};border-color:currentColor">${esc(r.server || 'local')}</span>
+      ${r.via === 'ui' ? '<span class="pill" title="queued from the ComfyUI interface, recorded by the monitor\'s watcher">ui</span>' : ''}
       ${catPill(r.category)}
       <span class="div"></span>
       <span class="grp" title="${esc(r.group || '')}${r.version ? ' · version ' + esc(r.version) : ''}">${r.version ? esc(r.version) + ' · ' : ''}${esc(r.group || '—')}</span>

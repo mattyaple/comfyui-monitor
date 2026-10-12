@@ -11,6 +11,7 @@ GET
   /api/config              project.json plus derived fields (versions, paths, category colors)
   /api/servers             servers.json
   /api/runs                run records, newest first, with images resolved, marks, category / group / section / version
+  /api/watch                 the UI-run watcher's status and log (runs queued from the ComfyUI interface)
   /api/queue               ComfyUI queue per server (never opens tunnels; a remote server reads as offline when its tunnel is down)
   /api/selects             version list + select counts per collection
   /api/collection?id=&v=   one collection's groups and files (the Selects tab), with marks and provenance
@@ -790,6 +791,9 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"runs": load_runs()})
             if u.path == "/api/queue":
                 return self.send_json(comfy_queue())
+            if u.path == "/api/watch":
+                import watch
+                return self.send_json(watch.status())
             if u.path == "/api/selects":
                 c = cfg()
                 return self.send_json({"version": c["_cur"], "versions": c["_versions"], "collections": [x["id"] for x in c["collections"]]})
@@ -833,4 +837,6 @@ if __name__ == "__main__":
     if errs:
         print("project.json has problems (the Settings tab shows them):", *errs, sep="\n  ")
     print(f"{c['project'].get('title') or 'monitor'}: http://127.0.0.1:{port}")
+    if c["runs"].get("watch_ui", True):
+        import watch; watch.start()
     ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()

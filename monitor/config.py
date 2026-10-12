@@ -83,6 +83,11 @@ DEFAULTS = {
             ["style", "style"], ["logo", "logo"], ["photo", "photo"], ["_SEL$", "select"], ["product|packshot|bottle", "product"],
         ],
         "collapse_after": 2,      # run cards after the n newest start collapsed
+        "watch_ui": True,         # runs queued from the ComfyUI interface get records too (watch.py polls /queue and /history)
+        "ui_watch_interval_s": 4, # seconds between polls
+        "ui_history_items": 40,   # how many history entries each poll reads
+        "ui_lookback_h": 24,      # ignore history entries that started longer ago (first start on a busy machine)
+        "ui_title_node": "Run Title",  # a string node with this title in the UI graph names the run on its card
     },
     "selects": {"tags": {"select": "Yellow", "ng": "Red"}},
     "export": {
