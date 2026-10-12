@@ -7,6 +7,8 @@
   model, seed, batch, outputs, timing, billed cost) for prompts that save into the project's output tree, marks them
   `via: "ui"` (a `ui` pill) and keeps their API graph under `workflows/ui/` for re-rolls. A string node titled
   `Run Title` in the workflow names the card. `/api/watch` shows the watcher's status and log.
+  `python3 monitor/watch.py import <prompt_id>… [--group G] [--title T]` records history entries the watcher skipped
+  (runs before the monitor existed, graphs that saved outside the project tree) so their cost counts.
 - Fix: the credit balance reads the billing API's `*_cents` fields (a "stripe" rail account showed $0.02 instead of $248).
 - Fix: run.py strips `paths.output_prefix` (or an absolute output root) from a graph's save path before classifying it, so
   `--dry-run` and the record's `kind`/`section` are right for graphs that save with an absolute path.

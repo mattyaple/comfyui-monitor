@@ -300,3 +300,51 @@ def loop():
 
 def start():
     t = threading.Thread(target=loop, name="ui-watch", daemon=True); t.start(); return t
+
+
+# ---- manual import ----------------------------------------------------------------------------------------------------
+
+def import_prompts(prompt_ids, group=None, title=None, server="local"):
+    """Give history entries records even when their save path is not this project's (a run before the monitor existed,
+    a graph that saved elsewhere). Outputs are taken when they can be found; the billed cost is looked up either way."""
+    c = config.load(); scfg = config.servers().get(server) or {}
+    known = records_by_prompt(); out = []
+    port = scfg.get("port", 8188)
+    for pid in prompt_ids:
+        if pid in known:
+            print(f"[import] {pid[:8]} already recorded as {known[pid][1]['id']}"); continue
+        try:
+            entry = _get(f"http://127.0.0.1:{port}/history/{pid}", timeout=10).get(pid)
+        except Exception as e:
+            print(f"[import] {pid[:8]}: history not readable: {e}"); continue
+        if not entry:
+            print(f"[import] {pid[:8]}: not in ComfyUI's history"); continue
+        p = entry.get("prompt") or []; g, extra = (p[2] if len(p) > 2 else {}), (p[3] if len(p) > 3 else {})
+        msgs = {m[0]: (m[1] or {}).get("timestamp") for m in (entry.get("status") or {}).get("messages") or [] if isinstance(m, list) and len(m) > 1}
+        t0 = (msgs.get("execution_start") or 0) / 1000
+        path, rec = new_record(pid, g, extra, server, c, scfg, started=datetime.fromtimestamp(t0) if t0 else None)
+        if group:
+            rec["group"] = group
+        if title:
+            rec["title"] = title
+        rec["events"].append({"t": time.strftime("%H:%M:%S"), "node": "imported from ComfyUI's history"})
+        finalize(path, rec, entry, g, c, scfg)
+        if not rec["outputs"] and (entry.get("status") or {}).get("status_str") == "success":
+            rec["status"] = "done"; rec["error"] = None
+            rec["events"].append({"t": time.strftime("%H:%M:%S"), "node": "no output files found on disk (saved elsewhere, moved or deleted)"})
+            save_record(path, rec)
+        cost = rec.get("cost") or {}
+        print(f"[import] {rec['id']} {rec['status']} · {len(rec['outputs'])} file(s) · cost " + (f"${cost['usd']:.3f}" if cost.get("usd") is not None else cost.get("error") or "n/a"))
+        out.append(rec)
+    return out
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Import ComfyUI history entries as run records (runs the watcher did not record: before it existed, or saved outside the project tree).")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    im = sub.add_parser("import"); im.add_argument("prompt_ids", nargs="+"); im.add_argument("--group", help="the unit these runs belong to")
+    im.add_argument("--title", help="card title for the imported runs"); im.add_argument("--server", default="local")
+    a = ap.parse_args()
+    if a.cmd == "import":
+        import_prompts(a.prompt_ids, a.group, a.title, a.server)
