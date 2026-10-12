@@ -478,7 +478,7 @@ function runKv(r) {
   return `<div class="kv">
     <b>seed</b><code>${r.seed ?? '—'}</code>
     <b>model</b><code>${esc(r.model || '—')}</code>
-    <b>batch / ar / res</b><code>${r.batch ?? '—'} · ${esc(r.aspect || '—')} · ${esc(r.resolution || '—')}${r.quality ? ' · ' + esc(r.quality) : ''}</code>
+    <b>batch / ar / res</b><code>${r.batch ?? '—'} · ${esc(r.aspect || '—')} · ${esc(r.resolution || '—')}${r.quality ? ' · ' + esc(r.quality) : ''}${r.duration ? ' · ' + r.duration + ' s' : ''}${r.mode ? ' · ' + esc(r.mode) : ''}</code>
     ${r.steps ? `<b>steps / cfg</b><code>${r.steps} · cfg ${r.cfg ?? '—'} · ${esc(r.sampler || '')}</code>` : ''}
     ${loras ? `<b>LoRAs</b><div>${loras}</div>` : ''}
     ${r.gen_seconds != null || r.total_seconds != null ? `<b>timing</b><code>gen ${fmtSec(r.gen_seconds)} · total ${fmtSec(r.total_seconds)}</code>` : ''}

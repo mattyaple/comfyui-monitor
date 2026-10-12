@@ -243,9 +243,9 @@ def graph_details(g):
 
     for n in g.values():
         ct, inp = n.get("class_type"), n.get("inputs", {})
-        if ct == "MultiImageLoader":
+        if ct == "MultiImageLoader":   # several loaders (start frames, end frames): all of them are references, in node order
             try:
-                d["refs"] = json.loads(inp.get("images", "[]"))
+                d["refs"] += [x for x in json.loads(inp.get("images", "[]")) if x not in d["refs"]]
             except Exception:
                 pass
         elif ct == "Seed":
@@ -296,10 +296,9 @@ def graph_details(g):
         elif ct in ("ByteDance2FirstLastFrameNode", "ByteDance2ReferenceNodeV2", "ByteDance2ReferenceNode", "ByteDance2TextToVideoNode",
                     "ByteDanceSeedance2ReferenceBatch", "ByteDanceImageToVideoNode", "ByteDanceFirstLastFrameNode", "ByteDanceTextToVideoNode"):
             d["model"] = inp.get("model") if isinstance(inp.get("model"), str) else ct
-            if not d["prompt"] and isinstance(inp.get("model.prompt", inp.get("prompt")), str):
-                d["prompt"] = inp.get("model.prompt", inp.get("prompt"))
-            elif not d["prompt"] and isinstance(inp.get("model.prompt", inp.get("prompt")), list):
-                d["prompt"] = inp.get("model.prompt", inp.get("prompt"))
+            pv = inp.get("model.prompt", inp.get("prompt"))
+            if not d["prompt"] and pv is not None:
+                d["prompt"] = pv if isinstance(pv, str) else (sval(g, pv) or pv)   # a prompt fed by a text node is static; an LLM's is resolved from the history
             d["resolution"] = inp.get("model.resolution", inp.get("resolution")); d["aspect"] = inp.get("model.ratio", inp.get("aspect_ratio", inp.get("model.aspect_ratio")))
             d["batch"] = inp.get("model.batch_size") or 1; d["duration"] = inp.get("model.duration", inp.get("duration"))
             if d["seed"] is None and isinstance(inp.get("seed"), int):
