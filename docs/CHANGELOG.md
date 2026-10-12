@@ -12,6 +12,8 @@
 - Fix: the credit balance reads the billing API's `*_cents` fields (a "stripe" rail account showed $0.02 instead of $248).
 - Fix: run.py resolves DF_Text (`Text`) and chained string nodes in save paths; a run-time string (LLM output) ends the
   static path instead of becoming "None".
+- Fix: run.py finds the outputs of a graph whose save folder is only known at run time (an LLM-named shot folder):
+  every new image below the static part of the path counts, so such runs no longer end as "error" with files on disk.
 - Fix: run.py strips `paths.output_prefix` (or an absolute output root) from a graph's save path before classifying it, so
   `--dry-run` and the record's `kind`/`section` are right for graphs that save with an absolute path.
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run

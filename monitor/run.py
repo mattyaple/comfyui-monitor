@@ -529,7 +529,7 @@ def main():
         if not args.dry_run:
             json.dump(g, open(wf, "w"), indent=1)
     det = graph_details(g); engine = engine_of(g)
-    rel = project_rel_path(det["save_path"] or "")
+    rel = re.sub(r"/{2,}", "/", project_rel_path(det["save_path"] or ""))
     cls = config.classify_path(CFG, rel + ("x.png" if rel.endswith("/") else ".png"))   # a path that ends at a folder: classify the folder
     if args.dry_run:
         where = f"{cls[0]['id']} / {cls[1]}" + (f" / {cls[2]}" if cls[2] else "") + (f" ({cls[3]})" if cls[3] else "") if cls else "unclassified (shown under 'other')"
@@ -601,13 +601,21 @@ def main():
     p.wait()
     rec["total_seconds"] = round(time.time() - t_submit, 1)
     if ok and not rec["outputs"] and det.get("save_path"):
-        # the save node reported no file names: find new files by prefix under the server's output root (waits for a NAS sync)
-        sub, prefix = os.path.split(det["save_path"]); pre = scfg.get("output_prefix", "")
-        rel_sub = sub[len(pre):] if pre and sub.startswith(pre) else sub
+        # the save node reported no file names (WAS Image Save without previews): find the new files on disk (waits for a NAS sync).
+        # A static path names the file prefix; a path whose tail is only known at run time (an LLM-named shot folder) ends at a
+        # folder, and every new image below it counts.
+        sp = re.sub(r"/{2,}", "/", det["save_path"]); folder_only = sp.endswith("/")
+        sub, prefix = (sp.rstrip("/"), "") if folder_only else os.path.split(sp)
+        rel_sub = project_rel_path(sub)
+        base = os.path.join(scfg["output_root"], rel_sub) if not os.path.isabs(rel_sub) else rel_sub
         t0 = datetime.fromisoformat(rec["started"]).timestamp() - 5
         hits = []
         for _ in range(45):
-            hits = sorted(f for f in glob.glob(os.path.join(scfg["output_root"], rel_sub, prefix + "_*")) if os.path.getmtime(f) >= t0)
+            if folder_only:
+                hits = sorted(os.path.join(d, f) for d, dirs, files in os.walk(base) if d[len(base):].count("/") < 3
+                              for f in files if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and not f.startswith(".") and os.path.getmtime(os.path.join(d, f)) >= t0)
+            else:
+                hits = sorted(f for f in glob.glob(os.path.join(base, prefix + "_*")) if os.path.getmtime(f) >= t0)
             if len(hits) >= (det.get("batch") or 1):
                 break
             time.sleep(2)
