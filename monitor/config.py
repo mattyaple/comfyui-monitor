@@ -410,7 +410,11 @@ def servers():
     mt = os.path.getmtime(SERVERS_PATH)
     if _servers["data"] is None or _servers["mtime"] != mt:
         with open(SERVERS_PATH) as fh:
-            _servers.update(mtime=mt, data=json.load(fh))
+            data = json.load(fh)
+        for s in data.values():   # servers.json may use ~ like project.json does
+            if isinstance(s, dict) and isinstance(s.get("output_root"), str):
+                s["output_root"] = os.path.expanduser(s["output_root"])
+        _servers.update(mtime=mt, data=data)
     return _servers["data"]
 
 

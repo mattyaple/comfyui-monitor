@@ -5,6 +5,8 @@
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run
   records got `KeyError: '_grx'` (HTTP 500) on the Selects tab and `/api/collection` until the first run was indexed.
   Found setting up the Peter Millar AI Shoes monitor (2026-10-12).
+- Fix: `~` in a `servers.json` `output_root` is now expanded (the scaffold writes `~/ComfyUI/output/...` there; thumbnails and
+  `/full` returned 404 for every local file until the path was absolute).
 
 ## 0.1.0 (2026-10-09)
 
