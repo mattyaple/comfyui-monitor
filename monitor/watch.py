@@ -9,7 +9,7 @@ The API graph is kept under workflows/ui/<run id>.api.json so the card's re-roll
 The run title comes from a string node in the UI graph titled like runs.ui_title_node ("Run Title") when the
 workflow has one (read from the prompt's extra_pnginfo), else from the save folder.
 """
-import json, os, threading, time, traceback, urllib.request
+import json, os, re, threading, time, traceback, urllib.request
 from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +17,7 @@ import config  # noqa: E402
 import run as runner  # noqa: E402  (graph_details, engine_of, new_id, ref_hashes, bill, clean_names)
 
 IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
-STRING_KEYS = ("text", "value", "string")
+STRING_KEYS = ("text", "Text", "value", "string")   # Text / DF_Text / primitives
 _state = {"log": [], "seen_final": set(), "started": None, "error": None, "ticks": 0}
 
 
@@ -87,12 +87,15 @@ def project_rel(path, c, scfg):
 
 
 def belongs(g, c, scfg):
-    """The project-relative save folder of a graph that saves into this project's tree, else None."""
+    """The project-relative save folder of a graph that saves into this project's tree ("." for the root itself), else None."""
     for _, folder, _ in save_folders(g):
         rel = project_rel(folder, c, scfg)
         if rel is None:
             continue
-        if rel == "" or config.classify_path(c, rel.rstrip("/") + "/x.png"):
+        rel = re.sub(r"/{2,}", "/", rel).strip("/")
+        if rel == "":
+            return "."
+        if config.classify_path(c, rel + "/x.png"):
             return rel
     return None
 
@@ -138,7 +141,8 @@ def save_record(path, rec):
 def new_record(pid, g, extra, server, c, scfg, started=None):
     det = runner.graph_details(g); engine = runner.engine_of(g)
     rel = belongs(g, c, scfg) or ""
-    cls = config.classify_path(c, rel.rstrip("/") + "/x.png") if rel else None
+    rel = "" if rel == "." else rel
+    cls = config.classify_path(c, rel + "/x.png") if rel else None
     rid = runner.new_id()
     wdir = os.path.join(c["_paths"]["workflows"], "ui"); os.makedirs(wdir, exist_ok=True)
     wf = os.path.join(wdir, rid + ".api.json"); json.dump(g, open(wf, "w"), indent=1)

@@ -18,6 +18,8 @@
 - New: a prompt produced at run time (an LLM-written prompt, a shot splitter) is read from ComfyUI's history after the run
   (the text of the linked node or of a preview node fed by it), for run.py and UI runs alike. A linked aspect / model /
   resolution setting is read off the node that feeds it instead of being recorded as a link.
+- Fix: the watcher resolves DF_Text (`Text`) nodes in save paths and no longer drops a graph whose static path ends at
+  the output root (UI end-frame runs were skipped as "another project's").
 - Fix: run.py strips `paths.output_prefix` (or an absolute output root) from a graph's save path before classifying it, so
   `--dry-run` and the record's `kind`/`section` are right for graphs that save with an absolute path.
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run
