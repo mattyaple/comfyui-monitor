@@ -23,15 +23,30 @@ def up():
         return False
 
 
+PID = os.path.join(HERE, "server.pid")
 if "--stop" in sys.argv:
-    subprocess.run(["pkill", "-f", f"monitor/server.py.*{port}|monitor/server.py$"]); print("stopped"); sys.exit(0)
+    try:
+        pid = int(open(PID).read().strip())
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        else:
+            os.kill(pid, 15)
+        os.remove(PID); print("stopped")
+    except Exception:
+        if os.name != "nt":
+            subprocess.run(["pkill", "-f", f"monitor/server.py.*{port}|monitor/server.py$"]); print("stopped")
+        else:
+            print("no server.pid; stop it from the Task Manager (python monitor/server.py)")
+    sys.exit(0)
 if up():
     print(f"already running: {url}")
 elif "--foreground" in sys.argv:
     os.execv(sys.executable, [sys.executable, os.path.join(HERE, "server.py")])
 else:
     log = open(os.path.join(HERE, "server.log"), "a")
-    subprocess.Popen([sys.executable, os.path.join(HERE, "server.py")], cwd=ROOT, stdout=log, stderr=log, start_new_session=True)
+    kw = {"creationflags": 0x00000008 | 0x00000200} if os.name == "nt" else {"start_new_session": True}   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    proc = subprocess.Popen([sys.executable, os.path.join(HERE, "server.py")], cwd=ROOT, stdout=log, stderr=log, **kw)
+    open(PID, "w").write(str(proc.pid))
     for _ in range(30):
         if up():
             break

@@ -583,7 +583,7 @@ def main():
     cls = config.classify_path(CFG, rel + ("x.png" if rel.endswith("/") else ".png"))   # a path that ends at a folder: classify the folder
     if args.dry_run:
         where = f"{cls[0]['id']} / {cls[1]}" + (f" / {cls[2]}" if cls[2] else "") + (f" ({cls[3]})" if cls[3] else "") if cls else "unclassified (shown under 'other')"
-        print(f"[run] dry run: {os.path.relpath(wf, ROOT)} engine={engine} saves to {det['save_path']} -> {where}; nothing queued")
+        print(f"[run] dry run: {config.relp(wf, ROOT)} engine={engine} saves to {det['save_path']} -> {where}; nothing queued")
         return
     server = pick_server(engine, args.server, args.remote_ok, graph=g)
     scfg = SERVERS[server]
@@ -597,7 +597,7 @@ def main():
         "started": datetime.now().isoformat(timespec="seconds"), "finished": None, "status": "queued",
         "prompt": det["prompt"], "refs": det["refs"], "ref_hashes": ref_hashes(det["refs"]), "seed": det["seed"], "model": det["model"],
         "batch": det["batch"], "aspect": det["aspect"], "resolution": det["resolution"], "quality": det["quality"],
-        "workflow": os.path.relpath(wf, ROOT), "prompt_id": None, "outputs": [], "events": [], "current_node": None, "error": None,
+        "workflow": config.relp(wf, ROOT), "prompt_id": None, "outputs": [], "events": [], "current_node": None, "error": None,
         "server": server, "engine": engine, "loras": det.get("loras"), "steps": det.get("steps"), "cfg": det.get("cfg"),
         "sampler": det.get("sampler"), "negative": det.get("negative"), "expected": det.get("batch") or 0,
         "kind": cls[0]["id"] if cls else None, "section": cls[2] if cls else None, "version": cls[3] if cls else None,
@@ -670,7 +670,7 @@ def main():
             if len(hits) >= (det.get("batch") or 1):
                 break
             time.sleep(2)
-        rec["outputs"] = [os.path.relpath(f, scfg["output_root"]) for f in hits]
+        rec["outputs"] = [config.relp(f, scfg["output_root"]) for f in hits]
         rec["events"].append({"t": time.strftime("%H:%M:%S"), "node": f"outputs found on disk: {len(hits)}"})
     if not rec.get("prompt") and det.get("prompt_link") and rec.get("prompt_id"):
         rec["prompt"] = history_prompt(g, det["prompt_link"], rec["prompt_id"], port) or ""

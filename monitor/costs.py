@@ -17,7 +17,11 @@ The Costs tab then shows per-person usage and the combined project total for the
 
   python3 monitor/costs.py summary [--period 30]      python3 monitor/costs.py export [--csv]
 """
-import csv, getpass, hashlib, json, os, pwd, re, socket, subprocess, sys, time
+import csv, getpass, hashlib, json, os, re, socket, subprocess, sys, time
+try:
+    import pwd
+except ImportError:   # Windows
+    pwd = None
 from datetime import datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +38,7 @@ def person():
     if c.get("person"):
         return c["person"]
     try:
-        full = pwd.getpwuid(os.getuid()).pw_gecos.split(",")[0].strip()
+        full = pwd.getpwuid(os.getuid()).pw_gecos.split(",")[0].strip() if pwd else ""
     except Exception:
         full = ""
     return full or getpass.getuser()
@@ -107,7 +111,7 @@ def my_rows():
         coll = r.get("collected") or {}
         locs = [os.path.join(lr, coll[o]) for o in r.get("outputs") or [] if o in coll] or \
                [os.path.join(_out_root(r.get("server")), o) for o in r.get("outputs") or [] if _out_root(r.get("server")) == lr]
-        nsel = sum(1 for p in locs if os.path.isfile(p) and tags.marks(p).get("tagged"))
+        nsel = sum(1 for p in locs if os.path.isfile(p) and marks.read(p).get("tagged"))
         rows.append({"id": r["id"], "prompt_id": r.get("prompt_id"), "day": (r.get("started") or "")[:10], "usd": float(cost.get("usd") or 0),
                      "credits": float(cost.get("credits") or 0), "model": r.get("model") or "—", "group": r.get("group") or r.get("page") or "—",
                      "images": sum(1 for o in r.get("outputs") or [] if not str(o).lower().endswith(VID_EXT)),

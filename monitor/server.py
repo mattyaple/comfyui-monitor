@@ -50,12 +50,24 @@ def _imageio_ffmpeg():
     import glob as _g
     hits = _g.glob(os.path.expanduser("~/venvs/*/lib/python3*/site-packages/imageio_ffmpeg/binaries/ffmpeg-*")) + \
            _g.glob(os.path.expanduser("~/ComfyUI/.venv/lib/python3*/site-packages/imageio_ffmpeg/binaries/ffmpeg-*")) + \
-           _g.glob(os.path.expanduser("~/Documents/ComfyUI/.venv/lib/python3*/site-packages/imageio_ffmpeg/binaries/ffmpeg-*"))
+           _g.glob(os.path.expanduser("~/Documents/ComfyUI/.venv/lib/python3*/site-packages/imageio_ffmpeg/binaries/ffmpeg-*")) + \
+           _g.glob(os.path.expanduser("~/Documents/ComfyUI/.venv/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-*.exe")) + \
+           _g.glob(os.path.expanduser("~/ComfyUI/.venv/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-*.exe"))
     return next((h for h in hits if os.access(h, os.X_OK)), None)
 
 
-FFMPEG = shutil.which("ffmpeg") or next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", os.path.expanduser("~/.local/bin/ffmpeg")) if os.path.exists(p)), None) or _imageio_ffmpeg()
-FFPROBE = shutil.which("ffprobe") or next((p for p in ("/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", os.path.expanduser("~/.local/bin/ffprobe")) if os.path.exists(p)), None)
+def _winget_ffmpeg(tool):
+    """ffmpeg / ffprobe installed by `winget install Gyan.FFmpeg` on Windows, or None."""
+    import glob as _g
+    base = os.environ.get("LOCALAPPDATA") or ""
+    hits = _g.glob(os.path.join(base, "Microsoft", "WinGet", "Packages", "Gyan.FFmpeg*", "*", "bin", tool + ".exe")) + \
+           _g.glob(os.path.join(base, "Microsoft", "WinGet", "Links", tool + ".exe")) + _g.glob("C:/ffmpeg/bin/" + tool + ".exe")
+    return hits[0] if hits else None
+
+
+SIPS = shutil.which("sips")
+FFMPEG = shutil.which("ffmpeg") or next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", os.path.expanduser("~/.local/bin/ffmpeg")) if os.path.exists(p)), None) or _imageio_ffmpeg() or _winget_ffmpeg("ffmpeg")
+FFPROBE = shutil.which("ffprobe") or next((p for p in ("/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", os.path.expanduser("~/.local/bin/ffprobe")) if os.path.exists(p)), None) or _winget_ffmpeg("ffprobe")
 is_video = lambda p: str(p).lower().endswith(VID_EXT)
 LOCK = threading.Lock()
 
@@ -139,9 +151,12 @@ def thumb(path, w):
             if FFMPEG:   # a frame from the first second, scaled to the requested width
                 subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-ss", "0.3", "-i", path, "-frames:v", "1", "-vf", f"scale='min({w},iw)':-2", "-q:v", "4", out],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
-        else:
-            subprocess.run(["sips", "-Z", str(w), "-s", "format", "jpeg", "-s", "formatOptions", "80", path, "--out", out],
+        elif SIPS:
+            subprocess.run([SIPS, "-Z", str(w), "-s", "format", "jpeg", "-s", "formatOptions", "80", path, "--out", out],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif FFMPEG:   # Windows / Linux: ffmpeg scales still images too
+            subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-i", path, "-frames:v", "1", "-vf", f"scale='min({w},iw)':-2", "-q:v", "4", out],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
     return out if os.path.exists(out) else None
 
 
@@ -191,8 +206,10 @@ def file_hash(p):
 # ---- Finder tags (tags.py) --------------------------------------------------------------------------------------------
 
 import tags  # noqa: E402
+import marks as marksmod  # noqa: E402
 
-finder_label, finder_labels, marks = tags.set_label, tags.labels, tags.marks
+marks = marksmod.read                       # {"tagged", "ng", "pair"} of a file (sidecar first, Finder tags on a Mac)
+set_mark = marksmod.set                     # set_mark(path, "select" | "ng" | "pair", on)
 
 
 def tag_colors():
@@ -269,7 +286,7 @@ def find_group_file(col, group, name, prefer=None):
         for s in col.get("sections") or [{"sub": ""}]:
             p = os.path.join(config.group_dir(c, col, group, s.get("id") if s.get("sub") else None, ver), name)
             if os.path.isfile(p):
-                return os.path.relpath(p, local_root()), p
+                return config.relp(p, local_root()), p
     return None
 
 
@@ -305,7 +322,7 @@ def compare_for(rec, cat, group, sid, ver):
                     if os.path.isfile(p) and (cands := by_size.get(os.path.getsize(p))):
                         for f in cands:
                             if file_hash(p) == file_hash(os.path.join(d, f)):
-                                return {"src": "out:" + os.path.relpath(os.path.join(d, f), local_root()), "kind": s["label"].lower().rstrip("s"), "name": f, "ref": k}
+                                return {"src": "out:" + config.relp(os.path.join(d, f), local_root()), "kind": s["label"].lower().rstrip("s"), "name": f, "ref": k}
     for k, ref in enumerate(refs):
         for rx, label in c["runs"].get("ref_roles") or []:
             if label in ("plate", "mask") and re.search(rx, os.path.basename(ref), re.I):
@@ -324,7 +341,7 @@ def ref_versions(r):
                 out.append({"src": "in:" + rel, "state": "current" if want else "unknown", "v": want or ""}); continue
             old = os.path.join(os.path.dirname(p), "Z_OLD")
             hit = next((f for f in sorted(os.listdir(old)) if os.path.isfile(os.path.join(old, f)) and file_hash(os.path.join(old, f)) == want), None) if os.path.isdir(old) else None
-            out.append({"src": "in:" + os.path.relpath(os.path.join(old, hit), inp), "state": "archived", "v": want} if hit else {"src": "in:" + rel, "state": "changed", "v": want})
+            out.append({"src": "in:" + config.relp(os.path.join(old, hit), inp), "state": "archived", "v": want} if hit else {"src": "in:" + rel, "state": "changed", "v": want})
         except OSError:
             out.append({"src": "in:" + rel, "state": "unknown", "v": ""})
     return out
@@ -332,7 +349,7 @@ def ref_versions(r):
 
 def image_entry(rec, o, p, srv, coll_rel=None):
     """One output image of a run, with its marks, size and its own place in the collections (col / grp / sec / ver)."""
-    rel = coll_rel if coll_rel is not None else os.path.relpath(p, out_root(srv))
+    rel = coll_rel if coll_rel is not None else config.relp(p, out_root(srv))
     e = {"src": "out:" + rel, "srv": srv, "name": os.path.basename(p), "from": o, **marks(p), **dims(p)}
     try:
         e["mtime"] = os.path.getmtime(p)   # the page adds it to image URLs, so a replaced file is never shown from the browser cache
@@ -431,13 +448,13 @@ def reroll(run_id, dry=False):
     title = rec.get("title", base).split(" (re-roll")[0] + f" (re-roll seed {seed})"
     note = f"saves into {c['_cur']} ({moved[0][0]} → {moved[0][1]})" if moved else ""
     if dry:
-        return {"ok": True, "dry": True, "seed": seed, "workflow": os.path.relpath(new_wf, c["_root"]), "title": title, "note": note}
+        return {"ok": True, "dry": True, "seed": seed, "workflow": config.relp(new_wf, c["_root"]), "title": title, "note": note}
     json.dump(g, open(new_wf, "w"), indent=1)
     log = open(os.path.join(MON, "server.log"), "a")
     extra = ["--server", rec["server"]] if rec.get("server") else []
     subprocess.Popen([sys.executable, os.path.join(MON, "run.py"), new_wf, "--title", title, "--group", rec.get("group") or ""] + extra,
                      cwd=c["_root"], stdout=log, stderr=log, start_new_session=True)
-    return {"ok": True, "seed": seed, "workflow": os.path.relpath(new_wf, c["_root"]), "title": title, "note": note}
+    return {"ok": True, "seed": seed, "workflow": config.relp(new_wf, c["_root"]), "title": title, "note": note}
 
 
 def remove_run(run_id):
@@ -446,7 +463,7 @@ def remove_run(run_id):
         return {"ok": False, "error": "unknown run id"}
     d = os.path.join(runs_dir(), "_removed"); os.makedirs(d, exist_ok=True)
     shutil.move(src, os.path.join(d, run_id + ".json"))
-    return {"ok": True, "moved": os.path.relpath(os.path.join(d, run_id + ".json"), cfg()["_root"])}
+    return {"ok": True, "moved": config.relp(os.path.join(d, run_id + ".json"), cfg()["_root"])}
 
 
 # ---- collections (the Selects tab) ---------------------------------------------------------------------------------------
@@ -494,7 +511,7 @@ def list_images(d):
 
 
 def file_entry(c, col, group, sid, ver, d, f, meta, idx, dest_set):
-    p = os.path.join(d, f); rel = os.path.relpath(p, c["_paths"]["output_root"])
+    p = os.path.join(d, f); rel = config.relp(p, c["_paths"]["output_root"])
     pv = meta.get(f) or idx.get(rel) or {}
     e = {"name": f, "src": "out:" + rel, "srv": "local", "path": p, "section": sid, **marks(p), **dims(p),
          **{k: pv.get(k) for k in ("run", "title", "seed", "server", "model")}, "mtime": os.path.getmtime(p)}
@@ -523,7 +540,7 @@ def collection_listing(col_id, ver=None):
                 meta = sources_meta(d); ds = dest_names(dest)
                 files += [file_entry(c, col, g, s["id"], ver, d, f, meta, idx, ds) for f in list_images(d) if config.section_accepts(col, s, f)]
             files.sort(key=lambda e: e["name"], reverse=True)
-            groups.append({"group": g, "files": files, "dest": {k: (os.path.relpath(v, c["_root"]) if v and v.startswith(c["_root"]) else v) for k, v in dests.items() if v}})
+            groups.append({"group": g, "files": files, "dest": {k: (config.relp(v, c["_root"]) if v and v.startswith(c["_root"]) else v) for k, v in dests.items() if v}})
     else:
         depth = col.get("depth", 1)
         subs = []
@@ -531,7 +548,7 @@ def collection_listing(col_id, ver=None):
             for d, dirs, fs in os.walk(root):
                 dirs[:] = sorted(x for x in dirs if not x.startswith("."))
                 if any(f.lower().endswith(MEDIA_EXT) and not f.startswith((".", "_")) for f in fs):
-                    subs.append(os.path.relpath(d, root) if d != root else "(top level)")
+                    subs.append(config.relp(d, root) if d != root else "(top level)")
         else:
             for x in sorted(os.listdir(root), key=natural):
                 if not os.path.isdir(os.path.join(root, x)) or x.startswith((".", "_")):
@@ -553,7 +570,7 @@ def collection_listing(col_id, ver=None):
                 files.append(e)
             files.sort(key=lambda e: (-int(e["mtime"] // 60), e["name"]))
             groups.append({"group": g.replace("/", " / "), "folder": g, "files": files, "latest": max((e["mtime"] for e in files), default=0),
-                           "dest": {"": os.path.relpath(dest, c["_root"]) if dest and dest.startswith(c["_root"]) else dest} if dest else {}})
+                           "dest": {"": config.relp(dest, c["_root"]) if dest and dest.startswith(c["_root"]) else dest} if dest else {}})
         if depth == 0:
             groups.sort(key=lambda g: -g["latest"])
     return {"id": col_id, "version": ver, "groups": groups, "root": root}
@@ -612,11 +629,11 @@ def mark_select(src, srv, col_id, group, sid, ver, on):
     elif not lp:
         return {"ok": False, "error": "only files in the local output folder can be tagged (this one is on a remote mirror)"}
     for q in {x for x in (p, lp) if x and x.startswith(local_root() + "/")}:
-        finder_label(q, sel_color, on)
+        set_mark(q, "select", on)
     out = {"ok": True, "file": os.path.basename(p), "mode": mode, **marks(lp or p)}
     out["sel"] = on
     if dest:
-        out["dest"] = os.path.relpath(dest, c["_root"]) if dest.startswith(c["_root"]) else dest
+        out["dest"] = config.relp(dest, c["_root"]) if dest.startswith(c["_root"]) else dest
     return out
 
 
@@ -656,7 +673,7 @@ def mark_pair(src, srv, on):
     p = resolve(src, srv)
     if not p or not p.startswith(local_root() + "/"):
         return {"ok": False, "error": "only files in the local output folder can be paired"}
-    rel = os.path.relpath(p, local_root()); hit = config.classify_path(c, rel)
+    rel = config.relp(p, local_root()); hit = config.classify_path(c, rel)
     if not hit or hit[0].get("kind") != "shots":
         return {"ok": False, "error": "this image is not in a unit folder of the project"}
     col, group, sid, ver = hit
@@ -685,7 +702,7 @@ def mark_pair(src, srv, on):
             if old_rel and old_rel != (rel if key == "image" else src_rel):
                 op = os.path.join(local_root(), old_rel)
                 if os.path.isfile(op):
-                    finder_label(op, tag, False, exclusive=False)
+                    set_mark(op, "pair", False)
         for f in os.listdir(dest) if os.path.isdir(dest) else []:
             stem = os.path.splitext(f)[0]
             if stem in (a_name, b_name) and f.lower().endswith(MEDIA_EXT):
@@ -698,9 +715,9 @@ def mark_pair(src, srv, on):
         shutil.copy2(src_abs, os.path.join(dest, a_file)); shutil.copy2(p, os.path.join(dest, b_file))
         idx[shot] = {"image": rel, "source": src_rel or src_abs, "copies": [a_file, b_file], "when": datetime.now().isoformat(timespec="seconds")}
         write_pairs_index(dest, idx)
-        finder_label(p, tag, True, exclusive=False)
+        set_mark(p, "pair", True)
         if src_rel:
-            finder_label(os.path.join(local_root(), src_rel), tag, True, exclusive=False)
+            set_mark(os.path.join(local_root(), src_rel), "pair", True)
     else:
         how = pr.get("unpair", "z_old")
         for f in cur.get("copies") or []:
@@ -711,11 +728,11 @@ def mark_pair(src, srv, on):
                 elif how == "delete":
                     os.remove(fp)
         idx.pop(shot, None); write_pairs_index(dest, idx)
-        finder_label(p, tag, False, exclusive=False)
+        set_mark(p, "pair", False)
         for q in (os.path.join(local_root(), cur["source"]) if cur.get("source") and not os.path.isabs(cur["source"]) else cur.get("source"), os.path.join(local_root(), src_rel) if src_rel else None):
             if q and os.path.isfile(q) and q.startswith(local_root() + "/"):
-                finder_label(q, tag, False, exclusive=False)
-    out = {"ok": True, "pair": on, "shot": shot, "file": os.path.basename(p), "dest": os.path.relpath(dest, c["_root"]) if dest.startswith(c["_root"]) else dest,
+                set_mark(q, "pair", False)
+    out = {"ok": True, "pair": on, "shot": shot, "file": os.path.basename(p), "dest": config.relp(dest, c["_root"]) if dest.startswith(c["_root"]) else dest,
            "source": os.path.basename(src_abs) if src_abs else None, "source_src": ("out:" + src_rel) if src_rel else None, "copies": [a_name, b_name] if on else []}
     return out
 
@@ -727,7 +744,7 @@ def mark_ng(src, srv, on):
         return {"ok": False, "error": "source image not found"}
     if not p.startswith(local_root() + "/"):
         return {"ok": False, "error": "only files in the local output folder can be marked (this one is on a remote mirror)"}
-    finder_label(p, ng_color, on)
+    set_mark(p, "ng", on)
     return {"ok": True, "file": os.path.basename(p), **marks(p), "sel": False if on else marks(p).get("tagged", False)}
 
 
@@ -735,7 +752,12 @@ def reveal(src, srv):
     p = resolve(src, srv)
     if not p:
         return {"ok": False, "error": "file not found"}
-    subprocess.run(["open", "-R", p])
+    if sys.platform == "darwin":
+        subprocess.run(["open", "-R", p])
+    elif os.name == "nt":
+        subprocess.run(["explorer", "/select,", os.path.normpath(p).replace("/", "\\")])
+    else:
+        subprocess.run(["xdg-open", os.path.dirname(p)])
     return {"ok": True, "path": p}
 
 

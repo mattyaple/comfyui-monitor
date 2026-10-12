@@ -73,3 +73,11 @@ tab's export / import (`docs/UI_GUIDE.md`, "Costs").
 cd ~/cli-projects/comfyui-monitor && git pull
 python3 tools/new_monitor.py --target /path/to/project --update      # per project; keeps its config and runs
 ```
+
+
+## Windows
+
+The monitor runs on Windows (Python 3.10+, `uv`, ffmpeg from `winget install Gyan.FFmpeg`, comfy-cli through
+`uv tool install comfy-mcp --with comfy-cli`). Marks live in `_marks.json` sidecars beside the files (no Finder tags);
+on a shared volume they are the same marks the Macs see. `paths.*` in project.json take the drive-letter paths with
+forward slashes (`L:/share/project/02 Assets`). Start with `python monitor\start.py`.

@@ -99,8 +99,13 @@ an optional leading `{code}/`. A path no collection matches is category `other` 
 
 ## selects
 
-`tags.select` (Yellow), `tags.ng` (Red): the Finder label colors used as marks. Finder shows them; `tools/selects_index.py`
-reads them back. The two are exclusive.
+`tags.select` (Yellow), `tags.ng` (Red): the Finder label colors used as marks on a Mac. The two are exclusive.
+
+`marks`: where marks (select, NG, final pair) are stored. `sidecar` = a `_marks.json` beside the files, which travels
+with them, so on a shared volume every machine (Mac or Windows) sees the same marks; `tags` = Finder tags only (macOS);
+`both` = the sidecar is the source of truth and Finder tags mirror it; `auto` (default) = `both` on a Mac, `sidecar`
+elsewhere. A file that has a tag but no sidecar entry still reads from the tag; `tools/marks_migrate.py --write`
+converts a whole tree. `tools/selects_index.py` reads both stores.
 
 ## pairs
 

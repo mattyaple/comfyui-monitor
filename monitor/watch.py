@@ -155,7 +155,7 @@ def new_record(pid, g, extra, server, c, scfg, started=None):
         "started": (started or datetime.now()).isoformat(timespec="seconds"), "finished": None, "status": "queued",
         "prompt": det["prompt"], "refs": det["refs"], "ref_hashes": runner.ref_hashes(det["refs"]), "seed": det["seed"], "model": det["model"],
         "batch": det["batch"], "aspect": det["aspect"], "resolution": det["resolution"], "quality": det["quality"],
-        "workflow": os.path.relpath(wf, c["_root"]), "prompt_id": pid, "outputs": [], "events": [{"t": time.strftime("%H:%M:%S"), "node": "queued from the ComfyUI interface"}],
+        "workflow": config.relp(wf, c["_root"]), "prompt_id": pid, "outputs": [], "events": [{"t": time.strftime("%H:%M:%S"), "node": "queued from the ComfyUI interface"}],
         "current_node": None, "error": None, "server": server, "engine": engine, "loras": det.get("loras"), "steps": det.get("steps"),
         "cfg": det.get("cfg"), "sampler": det.get("sampler"), "negative": det.get("negative"), "expected": det.get("batch") or 0,
         "kind": cls[0]["id"] if cls else None, "section": cls[2] if cls else None, "version": cls[3] if cls else None,
@@ -180,7 +180,7 @@ def outputs_from_history(entry, g, c, scfg, t0, t1):
             sub = o.get("subfolder") or ""
             for cand in (os.path.join(root, project_rel(sub, c, scfg) or "\x00", o["filename"]), "/" + os.path.join(sub, o["filename"]), os.path.join(comfy_out, sub, o["filename"])):
                 if "\x00" not in cand and os.path.isfile(cand) and cand.startswith(root + "/"):
-                    found.append(os.path.relpath(cand, root)); break
+                    found.append(config.relp(cand, root)); break
     if found:
         return list(dict.fromkeys(found))
     for _, folder, _ in save_folders(g):
@@ -202,7 +202,7 @@ def outputs_from_history(entry, g, c, scfg, t0, t1):
                     except OSError:
                         continue
                     if t0 - 3 <= m <= t1 + 8:
-                        found.append(os.path.relpath(p, root))
+                        found.append(config.relp(p, root))
     return sorted(dict.fromkeys(found))
 
 

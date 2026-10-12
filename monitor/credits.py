@@ -42,7 +42,9 @@ def _reexec_if_needed():
     except ImportError:
         pass
     cfg = _cfg()
-    py = os.path.join(os.path.dirname(cfg["_paths"]["comfy_bin"]), "python")
+    d = os.path.dirname(cfg["_paths"]["comfy_bin"])
+    py = next((c for c in (os.path.join(d, "python"), os.path.join(d, "python.exe"), os.path.join(d, "Scripts", "python.exe"),
+                           os.path.expanduser("~/AppData/Roaming/uv/tools/comfy-mcp/Scripts/python.exe")) if os.path.isfile(c)), os.path.join(d, "python"))
     if os.path.isfile(py) and os.path.realpath(py) != os.path.realpath(sys.executable):
         os.execv(py, [py, os.path.abspath(__file__)] + sys.argv[1:])
     sys.exit(f"comfy_cli is not importable and no Python was found next to {cfg['_paths']['comfy_bin']}; "

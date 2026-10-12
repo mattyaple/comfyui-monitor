@@ -33,7 +33,7 @@ def no(msg):
 
 
 print(f"monitor check: {ROOT}")
-missing = [f for f in ("config.py", "server.py", "run.py", "collect.py", "export.py", "credits.py", "costs.py", "tags.py", "tunnel.py", "index.html") if not os.path.isfile(os.path.join(MON, f))]
+missing = [f for f in ("config.py", "server.py", "run.py", "collect.py", "export.py", "credits.py", "costs.py", "tags.py", "marks.py", "tunnel.py", "index.html") if not os.path.isfile(os.path.join(MON, f))]
 if missing:
     no(f"monitor code missing: {', '.join(missing)} (run tools/new_monitor.py --update from the template)")
     sys.exit(1)
@@ -78,10 +78,16 @@ P = cfg["_paths"]
 for k in ("output_root", "comfy_input"):
     (ok if os.path.isdir(P[k]) else hm)(f"paths.{k}: {P[k]}" + ("" if os.path.isdir(P[k]) else " (does not exist yet)"))
 (ok if os.access(P["comfy_bin"], os.X_OK) else no)(f"comfy-cli: {P['comfy_bin']}" + ("" if os.access(P["comfy_bin"], os.X_OK) else " not found or not executable (INSTALL.md)"))
-py = os.path.join(os.path.dirname(P["comfy_bin"]), "python")
+_d = os.path.dirname(P["comfy_bin"])
+py = next((c for c in (os.path.join(_d, "python"), os.path.join(_d, "python.exe"), os.path.join(_d, "Scripts", "python.exe"), os.path.expanduser("~/AppData/Roaming/uv/tools/comfy-mcp/Scripts/python.exe")) if os.path.isfile(c)), os.path.join(_d, "python"))
 (ok if os.path.isfile(py) else hm)(f"comfy-cli python (credit lookups): {py}" + ("" if os.path.isfile(py) else " missing: cost tracking will not work"))
 (ok if shutil.which("uv") else hm)("uv: " + (shutil.which("uv") or "not on PATH (exports need `uv` for reportlab / pillow, or install both for python3)"))
-(ok if shutil.which("sips") and shutil.which("xattr") else no)("macOS tools sips + xattr (thumbnails, Finder tags)")
+if sys.platform == "darwin":
+    (ok if shutil.which("sips") and shutil.which("xattr") else no)("macOS tools sips + xattr (thumbnails, Finder tags)")
+else:
+    sys.path.insert(0, MON); import server as _srv  # noqa: E402
+    (ok if _srv.FFMPEG else no)("ffmpeg (thumbnails on this platform): " + (_srv.FFMPEG or "not found — install ffmpeg (winget install Gyan.FFmpeg)"))
+    hm("marks live in _marks.json sidecars next to the files (no Finder tags on this platform)")
 for k in ("runs", "exports", "workflows"):
     d = P[k]
     try:

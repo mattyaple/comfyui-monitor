@@ -18,7 +18,11 @@ and the run record a "collected" map {server-relative output: path relative to t
 run.py calls collect_run() when a run ends. Manual backfill:
   python3 monitor/collect.py <run_id> [<run_id> ...]      # or --all for every run not yet collected
 """
-import fcntl, json, os, re, shutil, sys, urllib.parse, urllib.request
+import json, os, re, shutil, sys, urllib.parse, urllib.request
+try:
+    import fcntl
+except ImportError:   # Windows: no file locks (collect runs one at a time there)
+    fcntl = None
 from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -114,14 +118,14 @@ def collect_run(rec, save=None):
         return 0
     os.makedirs(LOCAL_ROOT, exist_ok=True)
     with open(os.path.join(LOCAL_ROOT, ".collect.lock"), "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)  # two servers can finish at the same moment
+        (fcntl.flock(lock, fcntl.LOCK_EX) if fcntl else None)  # two servers can finish at the same moment
         for rel, (col, group, sid, ver) in todo:
             local = _local(rec.get("server"))
             srel = _strip_prefix(rec, rel)
             if col.get("kind") == "shots":
                 d = config.group_dir(CFG, col, group, sid, ver)
                 sec = config.section(col, sid) if sid else None
-                final_rel = os.path.relpath(os.path.join(config.col_dir(CFG, col, ver), group, (sec or {}).get("sub") or ""), LOCAL_ROOT)
+                final_rel = config.relp(os.path.join(config.col_dir(CFG, col, ver), group, (sec or {}).get("sub") or ""), LOCAL_ROOT)
                 in_place = local and srel.startswith(final_rel + "/")
             else:
                 d = os.path.join(LOCAL_ROOT, os.path.dirname(srel)); in_place = local
@@ -139,7 +143,7 @@ def collect_run(rec, save=None):
                 how = _fetch(rec, rel, dest)
             if not how:
                 print(f"[collect] could not fetch {rel}"); continue
-            done[rel] = os.path.relpath(dest, LOCAL_ROOT); new += 1
+            done[rel] = config.relp(dest, LOCAL_ROOT); new += 1
             if how != "direct":
                 _record(d, name, rec, rel, how)
             elif not _recorded(d, name):

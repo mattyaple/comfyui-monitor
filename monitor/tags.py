@@ -11,9 +11,11 @@ import config  # noqa: E402
 
 LABEL_IDX = {"Gray": 1, "Green": 2, "Purple": 3, "Blue": 4, "Yellow": 5, "Red": 6, "Orange": 7}
 TAGS_ATTR, INFO_ATTR = "com.apple.metadata:_kMDItemUserTags", "com.apple.FinderInfo"
-_libc = ctypes.CDLL(None)
-_libc.getxattr.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_int]
-_libc.getxattr.restype = ctypes.c_ssize_t
+IS_MAC = sys.platform == "darwin"
+if IS_MAC:
+    _libc = ctypes.CDLL(None)
+    _libc.getxattr.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_int]
+    _libc.getxattr.restype = ctypes.c_ssize_t
 
 
 def colors():
@@ -34,6 +36,8 @@ def _xattr(path, name):
 def labels(path):
     """The Finder label colors on a file (from the tag list, or the legacy label bits in FinderInfo)."""
     out = set()
+    if not IS_MAC:
+        return out
     try:
         raw = _xattr(path, TAGS_ATTR)
         for t in (plistlib.loads(raw) if raw else []):
@@ -50,6 +54,8 @@ def labels(path):
 def set_label(path, color, on, exclusive=True):
     """Set or clear Finder's <color> label on a file, keeping unrelated tags. The select and NG marks are exclusive: setting
     one clears the other (exclusive=True); another label (the final-pair tag) is set beside them (exclusive=False)."""
+    if not IS_MAC:
+        return
     sel, ng = colors()
     read = lambda a: bytes.fromhex("".join(subprocess.run(["xattr", "-px", a, path], capture_output=True, text=True).stdout.split()))
     drop = ({sel, ng} if exclusive else set()) | {color} if on else {color}

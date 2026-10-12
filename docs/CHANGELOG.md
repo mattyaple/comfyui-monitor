@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 (2026-10-12)
+
+- Marks (select / NG / final pair) are stored in a `_marks.json` sidecar beside the files (`selects.marks`, default
+  `auto`): shared across every machine that sees the output tree, Mac or Windows. On a Mac Finder tags are kept as a
+  mirror (`both`); `tools/marks_migrate.py --write` converts existing tags. `tools/selects_index.py` reads both.
+- Windows support: forward-slash paths throughout (os.path wrapped on Windows), ffmpeg thumbnails when `sips` is
+  absent (winget / imageio-ffmpeg locations searched), Explorer for "show in Finder", `start.py --stop` through a pid
+  file, comfy-cli defaults for uv on Windows, no `pwd` / `fcntl` imports at module load.
+
 ## 0.2.0 (2026-10-12)
 
 - New: sections can carry a `stage` and a `shot`; the Selects tab then filters by two chip rows (stage, shot) instead

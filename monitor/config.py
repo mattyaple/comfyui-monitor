@@ -19,6 +19,20 @@ The config file is re-read whenever its modification time changes, so the Settin
 """
 import copy, json, os, re, sys
 
+# The monitor builds and compares paths with forward slashes (relative output paths, "startswith(root + '/')", the
+# collection regexes). Python accepts "/" in Windows paths, so on Windows the os.path helpers are wrapped to return "/".
+if os.name == "nt":
+    import ntpath as _ntpath
+    def _fwd(fn):
+        return lambda *a, **k: str(fn(*a, **k)).replace("\\", "/")
+    for _name in ("join", "relpath", "normpath", "abspath", "expanduser", "realpath", "dirname"):
+        setattr(os.path, _name, _fwd(getattr(_ntpath, _name)))
+
+
+def relp(path, root):
+    """path relative to root, with forward slashes on every platform."""
+    return os.path.relpath(path, root).replace("\\", "/")
+
 MON = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(MON)
 def _pick(env, name):
@@ -45,7 +59,7 @@ DEFAULTS = {
         "output_root": "~/ComfyUI/output/{code}",     # the local ComfyUI output subtree that belongs to this project
         "output_prefix": "{code}/",                   # what graphs put in front of their save path (relative to ComfyUI's output dir)
         "comfy_input": "~/ComfyUI/input",
-        "comfy_bin": "~/.local/share/uv/tools/comfy-mcp/bin/comfy",
+        "comfy_bin": "~/.local/bin/comfy.exe" if os.name == "nt" else "~/.local/share/uv/tools/comfy-mcp/bin/comfy",   # uv tool install comfy-mcp --with comfy-cli
         "runs": "{monitor}/runs",
         "workflows": "{project}/workflows",
         "exports": "{project}/exports",
@@ -89,7 +103,8 @@ DEFAULTS = {
         "ui_lookback_h": 24,      # ignore history entries that started longer ago (first start on a busy machine)
         "ui_title_node": "Run Title",  # a string node with this title in the UI graph names the run on its card
     },
-    "selects": {"tags": {"select": "Yellow", "ng": "Red"}},
+    "selects": {"tags": {"select": "Yellow", "ng": "Red"},
+                "marks": "auto"},   # where marks live: "sidecar" (_marks.json beside the files, shared), "tags" (Finder, macOS), "both"; auto = both on a Mac, sidecar elsewhere
     "pairs": {                # "final pair": an image plus the source image it was made from (its run's first input), copied together
         "enabled": False,
         "dest": "{selects_root}/{group}/Final",   # folder pattern: {selects_root} {output_root} {group} {section} {shot} (the section folder's last part)
@@ -285,6 +300,8 @@ def validate(cfg):
         for sub, secs in by_sub.items():
             if len(secs) > 1 and sum(1 for x in secs if not x.get("file_regex")) > 1:
                 errs.append(f"collections[{col.get('id')}].sections: several sections share the folder '{sub}' without a file_regex to tell them apart")
+    if (cfg["selects"].get("marks") or "auto") not in ("auto", "sidecar", "tags", "both"):
+        errs.append("selects.marks: auto, sidecar, tags or both")
     pr = cfg.get("pairs") or {}
     if pr.get("enabled"):
         if not pr.get("dest"):

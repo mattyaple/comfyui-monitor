@@ -71,7 +71,7 @@ def build():
                 seen.add(p); tags = tags_of(p)
                 if not tags:
                     continue
-                rel = os.path.relpath(p, OUT); hit = config.classify_path(CFG, rel)
+                rel = config.relp(p, OUT); hit = config.classify_path(CFG, rel)
                 col, group, sid, ver = hit if hit else (None, None, None, "")
                 status = next((MEANING[t] for t in tags if t in MEANING), "other")
                 files.append({"path": rel, "collection": col["id"] if col else None, "group": group, "section": sid, "version": ver or None,
@@ -89,4 +89,4 @@ if __name__ == "__main__":
     for f in files:
         if (not want or f["group"] == want) and (not only_sel or f["status"] == "select"):
             print(f"{f['status']:9} {f['tags']}  {f['path']}  run={f['run']}")
-    print(f"{len(files)} tagged files -> {os.path.relpath(INDEX, ROOT)}")
+    print(f"{len(files)} tagged files -> {config.relp(INDEX, ROOT)}")

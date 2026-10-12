@@ -28,7 +28,8 @@ Plain files, one Python process, one HTML page. Nothing runs unless `run.py` or 
 | `export.py` | Renders a spec (groups of images with captions) as a JPG contact sheet (Pillow) or a PDF (reportlab); run through `uv run --with reportlab --with pillow`. |
 | `costs.py` | This machine's billed runs + credit-log rows + manual expenses → ledger; shared-folder and import/export merging across teammates; summaries by model / group / day / person; backfill. |
 | `credits.py` | Comfy billing: balance, cost per prompt id (from `/api/billing/events`), the append-only shared credit log. Re-executes itself with comfy-cli's Python so the sign-in is reused. |
-| `tags.py` | Finder label colors as marks: read through `getxattr` in-process, written with `xattr`. |
+| `marks.py` | Marks (select / NG / final pair): the `_marks.json` sidecar beside the files (shared, every OS) and, on a Mac, Finder tags mirrored through `tags.py` (`selects.marks`). |
+| `tags.py` | Finder label colors (macOS): read through `getxattr` in-process, written with `xattr`; no-ops elsewhere. |
 | `tunnel.py` | SSH tunnels to remote servers (`servers.json`); never starts a stopped cloud instance. Shares its socket name with the comfyui skill's tunnel script so tunnels are reused. |
 | `start.py` / `start.command` | Start the server detached (or in the foreground), open the page, stop it. |
 
@@ -69,7 +70,13 @@ Every collected file gets a line in `<folder>/_sources.jsonl` (`file`, `run`, `s
 
 ## Marks
 
-A select is the configured Finder label (Yellow) on the image file itself; NG is the other (Red). They are exclusive.
+A mark lives in `_marks.json` next to the file (`{"name.png": {"select", "ng", "pair", "by", "when"}}`), so the marks of
+a shared output tree are the same on every machine, and on a Mac also as a Finder label on the file (Yellow select,
+Red NG, Green final pair) when `selects.marks` is `both` (the default there). Select and NG are exclusive.
+
+**Windows / Linux:** the monitor runs the same way; paths are handled with forward slashes (config.py wraps the
+os.path helpers on Windows), thumbnails come from ffmpeg instead of `sips`, "show in Finder" opens Explorer, and
+`start.py` keeps a `server.pid` for `--stop`.
 Copy-mode collections also copy a select into the destination (`select.dest`) and move it to `Z_OLD/` on unselect; the
 local original keeps the tag. A file is shown as a select when it carries the tag or sits in the destination. Remote
 mirrors cannot be tagged; marks go on the local copy. `tools/selects_index.py` reads the tags (through `mdls`, which
