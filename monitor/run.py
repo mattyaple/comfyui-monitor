@@ -293,6 +293,22 @@ def graph_details(g):
                     refs.append(src["inputs"].get("image"))
             if refs and not d["refs"]:
                 d["refs"] = refs
+        elif ct in ("ByteDance2FirstLastFrameNode", "ByteDance2ReferenceNodeV2", "ByteDance2ReferenceNode", "ByteDance2TextToVideoNode",
+                    "ByteDanceSeedance2ReferenceBatch", "ByteDanceImageToVideoNode", "ByteDanceFirstLastFrameNode", "ByteDanceTextToVideoNode"):
+            d["model"] = inp.get("model") if isinstance(inp.get("model"), str) else ct
+            if not d["prompt"] and isinstance(inp.get("model.prompt", inp.get("prompt")), str):
+                d["prompt"] = inp.get("model.prompt", inp.get("prompt"))
+            elif not d["prompt"] and isinstance(inp.get("model.prompt", inp.get("prompt")), list):
+                d["prompt"] = inp.get("model.prompt", inp.get("prompt"))
+            d["resolution"] = inp.get("model.resolution", inp.get("resolution")); d["aspect"] = inp.get("model.ratio", inp.get("aspect_ratio", inp.get("model.aspect_ratio")))
+            d["batch"] = inp.get("model.batch_size") or 1; d["duration"] = inp.get("model.duration", inp.get("duration"))
+            if d["seed"] is None and isinstance(inp.get("seed"), int):
+                d["seed"] = inp["seed"]
+            for key in ("first_frame", "last_frame", "image"):
+                v = inp.get(key)
+                if isinstance(v, list) and g.get(str(v[0]), g.get(v[0], {})).get("class_type") == "LoadImage":
+                    d["refs"].append(g.get(str(v[0]), g.get(v[0], {}))["inputs"].get("image"))
+            d["mode"] = "start + end frame" if isinstance(inp.get("last_frame"), list) else ("start frame" if isinstance(inp.get("first_frame"), list) or isinstance(inp.get("image"), list) else None)
         elif ct == "LLMPromptBuilder":
             d["prompt"] = inp.get("prompt", "")
         elif ct in ("ByteDanceSeedreamNodeV2", "Flux2ImageNode", "Flux2ProImageNode", "Flux2MaxImageNode", "GeminiNanoBanana2V2"):
@@ -587,6 +603,7 @@ def main():
         "sampler": det.get("sampler"), "negative": det.get("negative"), "expected": det.get("batch") or 0,
         "kind": cls[0]["id"] if cls else None, "section": cls[2] if cls else None, "version": cls[3] if cls else None,
         "tags": args.tag, "note": args.note, "gen_seconds": None, "total_seconds": None, "cost": None, "prompt_link": det.get("prompt_link"),
+        "duration": det.get("duration"), "mode": det.get("mode"),
     }
     path = os.path.join(RUNS, rec["id"] + ".json")
 
@@ -648,7 +665,7 @@ def main():
         for _ in range(45):
             if folder_only:
                 hits = sorted(os.path.join(d, f) for d, dirs, files in os.walk(base) if d[len(base):].count("/") < 3
-                              for f in files if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and not f.startswith(".") and os.path.getmtime(os.path.join(d, f)) >= t0)
+                              for f in files if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm", ".mkv")) and not f.startswith(".") and os.path.getmtime(os.path.join(d, f)) >= t0)
             else:
                 hits = sorted(f for f in glob.glob(os.path.join(base, prefix + "_*")) if os.path.getmtime(f) >= t0)
             if len(hits) >= (det.get("batch") or 1):

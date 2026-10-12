@@ -130,7 +130,9 @@ DEFAULTS = {
 BUILTIN_API_NODES = {"NanoBananaBatch", "NanoBanana2Batch", "NanoBananaProBatch", "GeminiImage2Node", "GeminiNanoBanana2", "GeminiNanoBanana2V2",
                      "OpenAIGPTImageNodeV2", "OpenAIGPTImage1", "ByteDanceSeedreamNodeV2", "Flux2ImageNode", "Flux2ProImageNode",
                      "Flux2MaxImageNode", "ClaudeNode", "GeminiNode", "GeminiImageNode", "KlingTextToVideoNode", "KlingImage2VideoNode",
-                     "VeoVideoGenerationNode", "ByteDanceSeedanceNode", "ByteDanceSeedance25Node"}
+                     "VeoVideoGenerationNode", "ByteDanceSeedanceNode", "ByteDanceSeedance25Node", "ByteDance2FirstLastFrameNode", "ByteDance2ReferenceNodeV2",
+                     "ByteDance2ReferenceNode", "ByteDance2TextToVideoNode", "ByteDanceSeedance2ReferenceBatch", "ByteDanceImageToVideoNode",
+                     "ByteDanceFirstLastFrameNode", "ByteDanceTextToVideoNode", "ByteDanceSeedreamNode", "ByteDanceSeedreamNodeV3"}
 
 
 class _Safe(dict):

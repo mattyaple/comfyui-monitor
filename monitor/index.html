@@ -263,6 +263,8 @@
   .okmsg { color:var(--ok); font-size:12px; margin:8px 0; }
   details.adv summary { cursor:pointer; color:var(--muted); font-size:12px; }
   .btn.pairbtn.on { border-color:#7cfc9a; color:#7cfc9a; }
+  #lbVid { max-width:100%; max-height:100%; background:#000; }
+  .tile .vidmark { position:absolute; right:6px; top:6px; background:rgba(0,0,0,.6); color:#fff; border-radius:4px; padding:0 6px; font-size:11px; line-height:16px; pointer-events:none; }
   .tile .pairmark { position:absolute; left:6px; top:6px; background:rgba(0,0,0,.55); color:#7cfc9a; border:1px solid #7cfc9a; border-radius:4px; padding:0 5px; font-size:11px; line-height:16px; pointer-events:none; }
 </style>
 </head>
@@ -305,7 +307,7 @@
     <button class="btn" id="lbReveal" onclick="lbReveal()" title="Show the file in Finder (F)">Show in Finder (F)</button>
     <button class="btn" onclick="lbClose()">✕ Esc</button>
   </div>
-  <div class="stage" id="lbStage"><span class="nav prev" onclick="lbStep(-1)">‹</span><img id="lbImg" alt="" draggable="false"><span class="nav next" onclick="lbStep(1)">›</span></div>
+  <div class="stage" id="lbStage"><span class="nav prev" onclick="lbStep(-1)">‹</span><img id="lbImg" alt="" draggable="false"><video id="lbVid" controls autoplay loop muted playsinline hidden></video><span class="nav next" onclick="lbStep(1)">›</span></div>
   <div id="lbInfo" hidden></div>
   <div class="keys">← → previous / next image · ↑ ↓ previous / next group · S select · X mark NG · P final pair · hold click or C: compare with source · I info · F show in Finder · Esc close</div>
 </div>
@@ -545,7 +547,7 @@ function runHtml(r, idx) {
   const collapsed = runCollapsed[r.id] ?? ($('#autoCollapse').checked && idx >= (CFG.runs.collapse_after ?? 2) && r.status === 'done');
   const outs = (r.images || []).map((im, k) => { const it = runImageItem(r, im), sel = isSelIm(it), bad = isNg(it);
     if (bad && optHideNg) return '';
-    return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}" style="--ar:${runAr(r, im)}" onclick="return openRunImage(event,'${r.id}',${k})"><img loading="lazy" src="${thumbUrl(im, 900)}"${im.w && im.h ? '' : ' onload="runTileLoaded(this)"'}><span class="cap">${capHtml(im.name)}</span>${im.pair ? '<span class="pairmark" title="final pair">◆ final</span>' : ''}${markBtns(sel, bad, `runMark(event,'${r.id}',${k},`)}</a>`; }).join('');
+    return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}" style="--ar:${runAr(r, im)}" onclick="return openRunImage(event,'${r.id}',${k})"><img loading="lazy" src="${thumbUrl(im, 900)}"${im.w && im.h ? '' : ' onload="runTileLoaded(this)"'}><span class="cap">${capHtml(im.name)}</span>${vidMark(im)}${im.pair ? '<span class="pairmark" title="final pair">◆ final</span>' : ''}${markBtns(sel, bad, `runMark(event,'${r.id}',${k},`)}</a>`; }).join('');
   const syncing = r.syncing || [], missing = Math.max(0, (r.batch || 4) - r.outputs.length - syncing.length);
   const ph = (isActive(r) ? Array(missing).fill(`<div class="placeholder" style="--ar:${runAr(r)}">rendering…</div>`).join('') : '')
            + syncing.map(o => `<div class="placeholder" style="--ar:${runAr(r)}">rendered · waiting for the remote mirror<br>${esc(base(o))}</div>`).join('');
@@ -656,6 +658,8 @@ document.querySelectorAll('.tabs a').forEach(a => a.addEventListener('click', e 
 // ---- marks (select / NG) ---------------------------------------------------------------------------------------------------
 const qs = im => `src=${encodeURIComponent(im.src)}${im.srv ? '&srv=' + encodeURIComponent(im.srv) : ''}${im.mtime ? '&v=' + Math.round(im.mtime) : ''}`;  // v: the file's mtime, so a re-rendered file under an old name is never served from the browser cache
 const thumbUrl = (im, w) => `/thumb?${qs(im)}&w=${w}`;
+const isVideo = im => /\.(mp4|mov|webm|mkv)$/i.test(im.name || im.src || '');
+const vidMark = im => isVideo(im) ? `<span class="vidmark">▶${im.dur ? ' ' + im.dur + 's' : ''}</span>` : '';
 const fullUrl = im => `/full?${qs(im)}`;
 const isSelIm = im => !!im.sel;
 const isNg = im => !!im.ng;
@@ -700,7 +704,8 @@ function lbOpen(items, i, action) { lb = {items, i, action}; $('#lb').hidden = f
 function lbClose() { $('#lb').hidden = true; poll.sig = null; poll(); if (!$('#view-selects').hidden) (optStale ? loadOptions(true) : renderOptions()); }
 function lbShow() {
   const im = lb.items[lb.i]; if (!im) return;
-  $('#lbImg').src = thumbUrl(im, 1920);
+  const vid = isVideo(im); $('#lbImg').hidden = vid; $('#lbVid').hidden = !vid;
+  if (vid) { $('#lbVid').src = fullUrl(im); $('#lbImg').removeAttribute('src'); } else { $('#lbVid').pause(); $('#lbVid').removeAttribute('src'); $('#lbImg').src = thumbUrl(im, 1920); }
   [lb.i - 1, lb.i + 1].forEach(j => { const n = lb.items[j]; if (n) (new Image()).src = thumbUrl(n, 1920); });
   const sel = isSelIm(im), bad = isNg(im);
   $('#lbStage').classList.toggle('sel', sel); $('#lbStage').classList.toggle('ng', bad);
@@ -775,7 +780,9 @@ function lbPickRef(e, k) {
 }
 function lbHold(on) {
   const im = lb.items[lb.i], cmp = lbCompare(im); if (!cmp || lbHeld === on) return; lbHeld = on;
-  $('#lbImg').src = on ? cmpUrl(cmp) : thumbUrl(im, 1920); $('#lbStage').classList.toggle('cmp', on); $('#lbCmp').classList.toggle('on', on);
+  if (isVideo(im)) { $('#lbImg').hidden = !on; $('#lbVid').hidden = on; if (on) $('#lbImg').src = cmpUrl(cmp); else $('#lbImg').removeAttribute('src'); }
+  else $('#lbImg').src = on ? cmpUrl(cmp) : thumbUrl(im, 1920);
+  $('#lbStage').classList.toggle('cmp', on); $('#lbCmp').classList.toggle('on', on);
   $('#lbCmp').textContent = on ? `⇄ ${cmp.kind}: ${cmp.name.replace(/\.[^.]+$/, '')}` : `⇄ hold: ${cmp.kind} ${cmp.name.replace(/\.[^.]+$/, '')}`;
 }
 $('#lbImg').addEventListener('pointerdown', e => { if (e.button === 0) { e.preventDefault(); lbHold(true); } });
@@ -868,7 +875,7 @@ const capHtml = name => { const m = /^(.*?)(_\d+_?)?$/.exec(name.replace(/\.[^.]
 const arSeen = {};
 function tileLoaded(img, i) { const im = optVisible[i]; if (im && !(im.w && im.h) && img.naturalWidth) img.style.aspectRatio = arSeen[im.src] = img.naturalWidth + '/' + img.naturalHeight; }
 const tileHtml = (im, i) => { const sel = isSelIm(im), bad = isNg(im), ar = im.w && im.h ? im.w + '/' + im.h : arSeen[im.src];
-  return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}${optPicked.has(im.src) ? ' picked' : ''}" title="${esc(im.caption)}" data-i="${i}" onclick="return openOpt(event,${i})"><img loading="lazy" src="${thumbUrl(im, optThumbW())}"${ar ? ` style="aspect-ratio:${ar}"` : ''} onload="tileLoaded(this,${i})"><span class="cap">${capHtml(im.name)}</span>${im.pair ? '<span class="pairmark" title="final pair">◆ final</span>' : ''}${markBtns(sel, bad, `optMark(event,${i},`)}</a>`; };
+  return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}${optPicked.has(im.src) ? ' picked' : ''}" title="${esc(im.caption)}" data-i="${i}" onclick="return openOpt(event,${i})"><img loading="lazy" src="${thumbUrl(im, optThumbW())}"${ar ? ` style="aspect-ratio:${ar}"` : ''} onload="tileLoaded(this,${i})"><span class="cap">${capHtml(im.name)}</span>${vidMark(im)}${im.pair ? '<span class="pairmark" title="final pair">◆ final</span>' : ''}${markBtns(sel, bad, `optMark(event,${i},`)}</a>`; };
 let optPend = {};
 function groupHead(page, g) {
   const col = curCol(), nSel = g.items.filter(isSelIm).length, nNg = g.items.filter(isNg).length, nRun = (optPend[page] || []).length, secs = colSecs(col);

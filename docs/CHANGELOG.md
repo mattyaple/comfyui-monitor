@@ -2,6 +2,10 @@
 
 ## 0.2.0 (2026-10-12)
 
+- New: videos (.mp4 .mov .webm .mkv) are outputs too: listed in the Selects tab and on run cards (ffmpeg frame as
+  the thumbnail, ▶ badge with the duration from ffprobe), played in the lightbox (hold-compare swaps to the source
+  image), found by run.py and the watcher. Seedance nodes (ByteDance2*) are read for model, prompt, resolution,
+  duration and start / end frames (`mode` on the record). Exports still take images only.
 - New: sections may share a folder and be told apart by `file_regex` (start and end frames of one shot in one folder).
 - New: final pairs (`pairs` in project.json, ◆ / P in the lightbox): an image and the source image it was made from are
   copied together into a final folder as `{shot}_A` + `{shot}_B` and tagged (Green); `/api/pair`.

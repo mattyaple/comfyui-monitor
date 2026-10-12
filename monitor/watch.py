@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 import config  # noqa: E402
 import run as runner  # noqa: E402  (graph_details, engine_of, new_id, ref_hashes, bill, clean_names)
 
-IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
+IMG_EXT = (".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm", ".mkv")   # outputs the watcher looks for: images and videos
 STRING_KEYS = ("text", "Text", "value", "string")   # Text / DF_Text / primitives
 _state = {"log": [], "seen_final": set(), "started": None, "error": None, "ticks": 0}
 
@@ -160,6 +160,7 @@ def new_record(pid, g, extra, server, c, scfg, started=None):
         "cfg": det.get("cfg"), "sampler": det.get("sampler"), "negative": det.get("negative"), "expected": det.get("batch") or 0,
         "kind": cls[0]["id"] if cls else None, "section": cls[2] if cls else None, "version": cls[3] if cls else None,
         "tags": [], "note": None, "gen_seconds": None, "total_seconds": None, "cost": None, "prompt_link": det.get("prompt_link"),
+        "duration": det.get("duration"), "mode": det.get("mode"),
     }
     path = os.path.join(runner.RUNS, rid + ".json"); save_record(path, rec)
     log(f"{rid} new ui run {pid[:8]} -> {rel or '?'} ({title})")

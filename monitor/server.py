@@ -43,6 +43,11 @@ import config  # noqa: E402
 
 CACHE = os.path.join(MON, "cache")
 IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
+VID_EXT = (".mp4", ".mov", ".webm", ".mkv")
+MEDIA_EXT = IMG_EXT + VID_EXT
+FFMPEG = shutil.which("ffmpeg") or next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg") if os.path.exists(p)), None)
+FFPROBE = shutil.which("ffprobe") or next((p for p in ("/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe") if os.path.exists(p)), None)
+is_video = lambda p: str(p).lower().endswith(VID_EXT)
 LOCK = threading.Lock()
 
 
@@ -121,8 +126,13 @@ def thumb(path, w):
     key = hashlib.md5(f"{path}:{os.path.getmtime(path)}:{w}".encode()).hexdigest()
     out = os.path.join(CACHE, key + ".jpg")
     if not os.path.exists(out):
-        subprocess.run(["sips", "-Z", str(w), "-s", "format", "jpeg", "-s", "formatOptions", "80", path, "--out", out],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if is_video(path):
+            if FFMPEG:   # a frame from the first second, scaled to the requested width
+                subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-ss", "0.3", "-i", path, "-frames:v", "1", "-vf", f"scale='min({w},iw)':-2", "-q:v", "4", out],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        else:
+            subprocess.run(["sips", "-Z", str(w), "-s", "format", "jpeg", "-s", "formatOptions", "80", path, "--out", out],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return out if os.path.exists(out) else None
 
 
@@ -130,13 +140,29 @@ _dims = {}
 
 
 def dims(path):
-    """{"w", "h"} of a PNG from its header (cached), {} for other formats (the page measures the loaded image)."""
+    """{"w", "h"} of a PNG from its header, of a video through ffprobe (plus "dur" seconds), cached; {} for other formats
+    (the page measures the loaded image)."""
     try:
         key = (path, os.path.getmtime(path))
         if key not in _dims:
-            with open(path, "rb") as fh:
-                b = fh.read(24)
-            _dims[key] = {"w": int.from_bytes(b[16:20], "big"), "h": int.from_bytes(b[20:24], "big")} if b[:8] == b"\x89PNG\r\n\x1a\n" else {}
+            if is_video(path):
+                d = {"video": True}
+                if FFPROBE:
+                    try:
+                        j = json.loads(subprocess.run([FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", path],
+                                                      capture_output=True, text=True, timeout=30).stdout or "{}")
+                        st = (j.get("streams") or [{}])[0]
+                        if st.get("width") and st.get("height"):
+                            d.update(w=int(st["width"]), h=int(st["height"]))
+                        if (j.get("format") or {}).get("duration"):
+                            d["dur"] = round(float(j["format"]["duration"]), 1)
+                    except Exception:
+                        pass
+                _dims[key] = d
+            else:
+                with open(path, "rb") as fh:
+                    b = fh.read(24)
+                _dims[key] = {"w": int.from_bytes(b[16:20], "big"), "h": int.from_bytes(b[20:24], "big")} if b[:8] == b"\x89PNG\r\n\x1a\n" else {}
         return _dims[key]
     except OSError:
         return {}
@@ -451,11 +477,11 @@ def dest_names(dest):
     """Files present in a copy-mode select destination (Z_OLD ignored)."""
     if not dest or not os.path.isdir(dest):
         return set()
-    return {f for f in os.listdir(dest) if f.lower().endswith(IMG_EXT) and not f.startswith(".")}
+    return {f for f in os.listdir(dest) if f.lower().endswith(MEDIA_EXT) and not f.startswith(".")}
 
 
 def list_images(d):
-    return [f for f in os.listdir(d) if f.lower().endswith(IMG_EXT) and not f.startswith((".", "_"))] if os.path.isdir(d) else []
+    return [f for f in os.listdir(d) if f.lower().endswith(MEDIA_EXT) and not f.startswith((".", "_"))] if os.path.isdir(d) else []
 
 
 def file_entry(c, col, group, sid, ver, d, f, meta, idx, dest_set):
@@ -495,7 +521,7 @@ def collection_listing(col_id, ver=None):
         if depth == 0:
             for d, dirs, fs in os.walk(root):
                 dirs[:] = sorted(x for x in dirs if not x.startswith("."))
-                if any(f.lower().endswith(IMG_EXT) and not f.startswith((".", "_")) for f in fs):
+                if any(f.lower().endswith(MEDIA_EXT) and not f.startswith((".", "_")) for f in fs):
                     subs.append(os.path.relpath(d, root) if d != root else "(top level)")
         else:
             for x in sorted(os.listdir(root), key=natural):
@@ -653,7 +679,7 @@ def mark_pair(src, srv, on):
                     finder_label(op, tag, False, exclusive=False)
         for f in os.listdir(dest) if os.path.isdir(dest) else []:
             stem = os.path.splitext(f)[0]
-            if stem in (a_name, b_name) and f.lower().endswith(IMG_EXT):
+            if stem in (a_name, b_name) and f.lower().endswith(MEDIA_EXT):
                 os.makedirs(os.path.join(dest, "Z_OLD"), exist_ok=True)
                 k, target = 0, os.path.join(dest, "Z_OLD", f)
                 while os.path.exists(target):
@@ -926,7 +952,9 @@ class H(BaseHTTPRequestHandler):
                     self.send_response(404); self.end_headers(); return
                 fresh = "no-store" if g1("src").startswith("in:") else None  # inputs get replaced under the same name
                 if u.path == "/full":
-                    return self.send_file(p, "image/png" if p.endswith(".png") else "image/jpeg", fresh or "max-age=3600")
+                    ext = os.path.splitext(p)[1].lower()
+                    ctype = {".png": "image/png", ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm", ".mkv": "video/x-matroska"}.get(ext, "image/jpeg")
+                    return self.send_file(p, ctype, fresh or "max-age=3600")
                 t = thumb(p, int(g1("w", "640")))
                 if not t:
                     self.send_response(500); self.end_headers(); return
