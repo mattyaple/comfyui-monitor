@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import config, tags  # noqa: E402
+import config, tags, marks  # noqa: E402
 
 EXPENSES = os.path.join(HERE, "expenses.json")
 IMPORTS = os.path.join(HERE, "costs_imports")
