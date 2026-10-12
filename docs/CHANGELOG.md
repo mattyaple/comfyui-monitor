@@ -7,6 +7,8 @@
   model, seed, batch, outputs, timing, billed cost) for prompts that save into the project's output tree, marks them
   `via: "ui"` (a `ui` pill) and keeps their API graph under `workflows/ui/` for re-rolls. A string node titled
   `Run Title` in the workflow names the card. `/api/watch` shows the watcher's status and log.
+- Fix: run.py strips `paths.output_prefix` (or an absolute output root) from a graph's save path before classifying it, so
+  `--dry-run` and the record's `kind`/`section` are right for graphs that save with an absolute path.
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run
   records got `KeyError: '_grx'` (HTTP 500) on the Selects tab and `/api/collection` until the first run was indexed.
   Found setting up the Peter Millar AI Shoes monitor (2026-10-12).

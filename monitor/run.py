@@ -391,6 +391,16 @@ def graph_details(g):
 
 # ---- save paths and versions -------------------------------------------------------------------------------------------
 
+def project_rel_path(path):
+    """A graph's save path relative to the project's output tree: the server's output_prefix (or the absolute output root) stripped."""
+    p = os.path.expanduser(path or "")
+    root = os.path.expanduser(CFG["_paths"]["output_root"]).rstrip("/")
+    if os.path.isabs(p):
+        return p[len(root) + 1:] if p.startswith(root + "/") else p
+    pre = os.path.expanduser(CFG["_paths"].get("output_prefix") or "")
+    return p[len(pre):] if pre and p.startswith(pre) else p
+
+
 def save_nodes(g):
     """[(node id, class, save path)] for every save node, with linked string inputs resolved."""
     out = []
@@ -514,7 +524,7 @@ def main():
         if not args.dry_run:
             json.dump(g, open(wf, "w"), indent=1)
     det = graph_details(g); engine = engine_of(g)
-    cls = config.classify_path(CFG, (det["save_path"] or "") + ".png")
+    cls = config.classify_path(CFG, project_rel_path(det["save_path"] or "") + ".png")
     if args.dry_run:
         where = f"{cls[0]['id']} / {cls[1]}" + (f" / {cls[2]}" if cls[2] else "") + (f" ({cls[3]})" if cls[3] else "") if cls else "unclassified (shown under 'other')"
         print(f"[run] dry run: {os.path.relpath(wf, ROOT)} engine={engine} saves to {det['save_path']} -> {where}; nothing queued")
