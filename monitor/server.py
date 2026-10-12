@@ -45,8 +45,17 @@ CACHE = os.path.join(MON, "cache")
 IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
 VID_EXT = (".mp4", ".mov", ".webm", ".mkv")
 MEDIA_EXT = IMG_EXT + VID_EXT
-FFMPEG = shutil.which("ffmpeg") or next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg") if os.path.exists(p)), None)
-FFPROBE = shutil.which("ffprobe") or next((p for p in ("/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe") if os.path.exists(p)), None)
+def _imageio_ffmpeg():
+    """The ffmpeg binary imageio-ffmpeg ships in a ComfyUI environment (Macs without Homebrew), or None."""
+    import glob as _g
+    hits = _g.glob(os.path.expanduser("~/venvs/*/lib/python3*/site-packages/imageio_ffmpeg/binaries/ffmpeg-*")) + \
+           _g.glob(os.path.expanduser("~/ComfyUI/.venv/lib/python3*/site-packages/imageio_ffmpeg/binaries/ffmpeg-*")) + \
+           _g.glob(os.path.expanduser("~/Documents/ComfyUI/.venv/lib/python3*/site-packages/imageio_ffmpeg/binaries/ffmpeg-*"))
+    return next((h for h in hits if os.access(h, os.X_OK)), None)
+
+
+FFMPEG = shutil.which("ffmpeg") or next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", os.path.expanduser("~/.local/bin/ffmpeg")) if os.path.exists(p)), None) or _imageio_ffmpeg()
+FFPROBE = shutil.which("ffprobe") or next((p for p in ("/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", os.path.expanduser("~/.local/bin/ffprobe")) if os.path.exists(p)), None)
 is_video = lambda p: str(p).lower().endswith(VID_EXT)
 LOCK = threading.Lock()
 

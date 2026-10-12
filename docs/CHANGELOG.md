@@ -31,6 +31,8 @@
   the output root (UI end-frame runs were skipped as "another project's").
 - Fix: the watcher treats removed records (`runs/_removed/`) as known, so a run removed from the page is not imported
   again from the history after a restart.
+- Fix: video thumbnails also find the ffmpeg that imageio-ffmpeg ships in a ComfyUI environment and `~/.local/bin`
+  (Intel Macs without Homebrew). Without ffprobe the size and duration of a video are simply not shown.
 - Fix: run.py strips `paths.output_prefix` (or an absolute output root) from a graph's save path before classifying it, so
   `--dry-run` and the record's `kind`/`section` are right for graphs that save with an absolute path.
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run
