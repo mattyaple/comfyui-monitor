@@ -376,6 +376,16 @@ def graph_details(g):
             d["save_path"] = f"{sval(g, inp.get('output_path'))}/{sval(g, inp.get('filename_prefix'))}"
     if isinstance(d.get("prompt"), list):   # the prompt is produced at run time (an LLM, a splitter): resolve it from the history afterwards
         d["prompt_link"] = d["prompt"]; d["prompt"] = ""
+    if not d.get("prompt") and not d.get("prompt_link"):   # a generator whose prompt input is a link (Nano Banana fed by a splitter)
+        for n in g.values():
+            if is_api_node(n) and isinstance(n.get("inputs", {}).get("prompt"), list):
+                d["prompt_link"] = n["inputs"]["prompt"]; break
+    for key in ("aspect", "resolution", "model", "quality"):   # a linked setting: read it off the node that feeds it (a shot picker's aspect_ratio)
+        v = d.get(key)
+        if isinstance(v, list):
+            src = g.get(str(v[0]), g.get(v[0], {})).get("inputs", {})
+            cand = [x for x in (src.get("aspect_ratio") if key == "aspect" else src.get(key), src.get("value"), src.get("text")) if isinstance(x, str)]
+            d[key] = cand[0] if cand else None
     if not d.get("prompt"):
         texts = [n["inputs"]["text"] for n in g.values() if n.get("class_type") == "CLIPTextEncode" and isinstance(n["inputs"].get("text"), str) and n["inputs"]["text"] != d.get("negative")]
         if texts:
