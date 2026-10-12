@@ -153,7 +153,7 @@ def new_record(pid, g, extra, server, c, scfg, started=None):
         "current_node": None, "error": None, "server": server, "engine": engine, "loras": det.get("loras"), "steps": det.get("steps"),
         "cfg": det.get("cfg"), "sampler": det.get("sampler"), "negative": det.get("negative"), "expected": det.get("batch") or 0,
         "kind": cls[0]["id"] if cls else None, "section": cls[2] if cls else None, "version": cls[3] if cls else None,
-        "tags": [], "note": None, "gen_seconds": None, "total_seconds": None, "cost": None,
+        "tags": [], "note": None, "gen_seconds": None, "total_seconds": None, "cost": None, "prompt_link": det.get("prompt_link"),
     }
     path = os.path.join(runner.RUNS, rid + ".json"); save_record(path, rec)
     log(f"{rid} new ui run {pid[:8]} -> {rel or '?'} ({title})")
@@ -205,6 +205,8 @@ def finalize(path, rec, entry, g, c, scfg):
     t0 = (msgs.get("execution_start") or 0) / 1000 or datetime.fromisoformat(rec["started"]).timestamp()
     t1 = (msgs.get("execution_success") or msgs.get("execution_error") or msgs.get("execution_interrupted") or 0) / 1000 or time.time()
     rec["outputs"] = outputs_from_history(entry, g, c, scfg, t0, t1)
+    if not rec.get("prompt") and rec.get("prompt_link"):
+        rec["prompt"] = runner.history_prompt(g, rec["prompt_link"], rec["prompt_id"], scfg.get("port", 8188)) or ""
     runner.clean_names(rec, scfg)
     err = next((m[1] for m in st.get("messages") or [] if isinstance(m, list) and m[0] == "execution_error"), None)
     if err:

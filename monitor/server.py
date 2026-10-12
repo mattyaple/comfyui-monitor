@@ -298,6 +298,10 @@ def image_entry(rec, o, p, srv, coll_rel=None):
     """One output image of a run, with its marks, size and its own place in the collections (col / grp / sec / ver)."""
     rel = coll_rel if coll_rel is not None else os.path.relpath(p, out_root(srv))
     e = {"src": "out:" + rel, "srv": srv, "name": os.path.basename(p), "from": o, **marks(p), **dims(p)}
+    try:
+        e["mtime"] = os.path.getmtime(p)   # the page adds it to image URLs, so a replaced file is never shown from the browser cache
+    except OSError:
+        pass
     hit = config.classify_path(cfg(), rel)
     if hit:
         col, group, sid, ver = hit

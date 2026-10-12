@@ -651,7 +651,7 @@ function showTab(t) {
 document.querySelectorAll('.tabs a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
 
 // ---- marks (select / NG) ---------------------------------------------------------------------------------------------------
-const qs = im => `src=${encodeURIComponent(im.src)}${im.srv ? '&srv=' + encodeURIComponent(im.srv) : ''}`;
+const qs = im => `src=${encodeURIComponent(im.src)}${im.srv ? '&srv=' + encodeURIComponent(im.srv) : ''}${im.mtime ? '&v=' + Math.round(im.mtime) : ''}`;  // v: the file's mtime, so a re-rendered file under an old name is never served from the browser cache
 const thumbUrl = (im, w) => `/thumb?${qs(im)}&w=${w}`;
 const fullUrl = im => `/full?${qs(im)}`;
 const isSelIm = im => !!im.sel;

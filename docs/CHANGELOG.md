@@ -14,6 +14,9 @@
   static path instead of becoming "None".
 - Fix: run.py finds the outputs of a graph whose save folder is only known at run time (an LLM-named shot folder):
   every new image below the static part of the path counts, so such runs no longer end as "error" with files on disk.
+- Fix: image URLs carry the file's mtime, so a file re-rendered under an old name is never shown from the browser cache.
+- New: a prompt produced at run time (an LLM-written prompt, a shot splitter) is read from ComfyUI's history after the run
+  (the text of the linked node or of a preview node fed by it), for run.py and UI runs alike.
 - Fix: run.py strips `paths.output_prefix` (or an absolute output root) from a graph's save path before classifying it, so
   `--dry-run` and the record's `kind`/`section` are right for graphs that save with an absolute path.
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run

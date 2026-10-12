@@ -374,6 +374,8 @@ def graph_details(g):
             d["save_path"] = d["save_path"] or inp.get("filename_prefix")
         elif ct == "Image Save":
             d["save_path"] = f"{sval(g, inp.get('output_path'))}/{sval(g, inp.get('filename_prefix'))}"
+    if isinstance(d.get("prompt"), list):   # the prompt is produced at run time (an LLM, a splitter): resolve it from the history afterwards
+        d["prompt_link"] = d["prompt"]; d["prompt"] = ""
     if not d.get("prompt"):
         texts = [n["inputs"]["text"] for n in g.values() if n.get("class_type") == "CLIPTextEncode" and isinstance(n["inputs"].get("text"), str) and n["inputs"]["text"] != d.get("negative")]
         if texts:
@@ -404,6 +406,27 @@ def project_rel_path(path):
         return p[len(root) + 1:] if p.startswith(root + "/") else p
     pre = os.path.expanduser(CFG["_paths"].get("output_prefix") or "")
     return p[len(pre):] if pre and p.startswith(pre) else p
+
+
+def history_prompt(g, link, prompt_id, port=8188):
+    """The text a run-time prompt link carried, read from ComfyUI's history: the text output of the linked node itself or of a
+    preview node fed by the same link. Several texts (one per shot) are joined. None when the history has nothing."""
+    if not (isinstance(link, list) and prompt_id):
+        return None
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/history/{prompt_id}", timeout=8) as r:
+            entry = (json.load(r) or {}).get(prompt_id) or {}
+    except Exception:
+        return None
+    outs = entry.get("outputs") or {}
+    want = [str(link[0])] + [nid for nid, n in g.items() if any(v == link for v in (n.get("inputs") or {}).values())]
+    for nid in want:
+        texts = (outs.get(nid) or {}).get("text") or (outs.get(nid) or {}).get("string") or []
+        texts = [t for t in (texts if isinstance(texts, list) else [texts]) if isinstance(t, str) and t.strip()]
+        if texts:
+            return "\n\n".join(t.strip() for t in texts)
+    return None
 
 
 def save_nodes(g):
@@ -551,7 +574,7 @@ def main():
         "server": server, "engine": engine, "loras": det.get("loras"), "steps": det.get("steps"), "cfg": det.get("cfg"),
         "sampler": det.get("sampler"), "negative": det.get("negative"), "expected": det.get("batch") or 0,
         "kind": cls[0]["id"] if cls else None, "section": cls[2] if cls else None, "version": cls[3] if cls else None,
-        "tags": args.tag, "note": args.note, "gen_seconds": None, "total_seconds": None, "cost": None,
+        "tags": args.tag, "note": args.note, "gen_seconds": None, "total_seconds": None, "cost": None, "prompt_link": det.get("prompt_link"),
     }
     path = os.path.join(RUNS, rec["id"] + ".json")
 
@@ -621,6 +644,8 @@ def main():
             time.sleep(2)
         rec["outputs"] = [os.path.relpath(f, scfg["output_root"]) for f in hits]
         rec["events"].append({"t": time.strftime("%H:%M:%S"), "node": f"outputs found on disk: {len(hits)}"})
+    if not rec.get("prompt") and det.get("prompt_link") and rec.get("prompt_id"):
+        rec["prompt"] = history_prompt(g, det["prompt_link"], rec["prompt_id"], port) or ""
     clean_names(rec, scfg)
     import collect
     if collect.is_collectable(rec):
