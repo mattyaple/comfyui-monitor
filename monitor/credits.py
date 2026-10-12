@@ -12,8 +12,9 @@ is not already running there.
 
 Units (checked 2026-10-02 on a legacy_stripe account):
 - $1 = 211 credits (costs.credits_per_usd in project.json).
-- /api/billing/balance on the legacy_stripe rail returns `amount_micros` in CENTS (the frontend divides by 100), on the
-  newer rail in micro-dollars. `comfy cloud status` gets the legacy case wrong by 10,000x; do not use it for the balance.
+- /api/billing/balance now returns explicit `*_cents` fields (used first). Older responses only had `*_micros`, which on the
+  legacy_stripe and stripe rails hold CENTS (the frontend divides by 100) and only on the comfy rail micro-dollars.
+  `comfy cloud status` gets the cents case wrong by 10,000x; do not use it for the balance.
 - /api/billing/events lists one `api_usage_completed` event per partner API call with `params.job_id` = the ComfyUI
   prompt_id and `params.credits_used`. Events can appear a few seconds after the job finishes, so `cost` and `log` wait.
 
@@ -59,16 +60,19 @@ def _get(*parts, query: str = ""):
 
 def balance(credits_per_usd=211) -> dict:
     body = _get("billing", "balance")
-    raw = None
-    for key in ("effective_balance_micros", "amount_micros", "prepaid_balance_micros"):
-        value = body.get(key)
-        if value:
-            raw = float(value)
-            break
     status = _get("billing", "status")
-    legacy = status.get("billing_rail") == "legacy_stripe"
-    usd = (raw or 0.0) / (100.0 if legacy else 1_000_000.0)
-    return {"usd": round(usd, 4), "credits": round(usd * credits_per_usd, 1), "raw": raw, "rail": status.get("billing_rail"),
+    raw, unit = None, None
+    for key in ("effective_balance_cents", "amount_cents", "prepaid_balance_cents"):   # explicit cents (2026-10 API): authoritative
+        if body.get(key) is not None:
+            raw, unit = float(body[key]), "cents"; break
+    if raw is None:
+        for key in ("effective_balance_micros", "amount_micros", "prepaid_balance_micros"):
+            if body.get(key):
+                raw = float(body[key]); break
+        # older responses: the legacy_stripe rail (and "stripe") report cents under the _micros keys; only "comfy" is micro-dollars
+        unit = "micros" if status.get("billing_rail") not in ("legacy_stripe", "stripe") else "cents"
+    usd = (raw or 0.0) / (100.0 if unit == "cents" else 1_000_000.0)
+    return {"usd": round(usd, 4), "credits": round(usd * credits_per_usd, 1), "raw": raw, "unit": unit, "rail": status.get("billing_rail"),
             "checked": dt.datetime.now().isoformat(timespec="seconds")}
 
 
