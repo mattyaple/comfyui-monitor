@@ -10,6 +10,8 @@
   `python3 monitor/watch.py import <prompt_id>… [--group G] [--title T]` records history entries the watcher skipped
   (runs before the monitor existed, graphs that saved outside the project tree) so their cost counts.
 - Fix: the credit balance reads the billing API's `*_cents` fields (a "stripe" rail account showed $0.02 instead of $248).
+- Fix: run.py resolves DF_Text (`Text`) and chained string nodes in save paths; a run-time string (LLM output) ends the
+  static path instead of becoming "None".
 - Fix: run.py strips `paths.output_prefix` (or an absolute output root) from a graph's save path before classifying it, so
   `--dry-run` and the record's `kind`/`section` are right for graphs that save with an absolute path.
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run

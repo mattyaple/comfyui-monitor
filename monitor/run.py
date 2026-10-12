@@ -210,7 +210,12 @@ def sval(g, v):
     src = g.get(v[0], {}); si = src.get("inputs", {})
     if src.get("class_type") == "StringConcatenate":
         return f"{sval(g, si.get('string_a'))}{si.get('delimiter', '')}{sval(g, si.get('string_b'))}"
-    return si.get("text") if isinstance(si.get("text"), str) else si.get("value") if isinstance(si.get("value"), str) else si.get("string")
+    for k in ("text", "Text", "value", "string"):   # Text / DF_Text / primitives, possibly fed by another string node
+        if isinstance(si.get(k), str):
+            return si[k]
+        if isinstance(si.get(k), list):
+            return sval(g, si[k])
+    return ""   # a node whose text is only known at run time (an LLM, a splitter): the static part of the path ends here
 
 
 def graph_details(g):
