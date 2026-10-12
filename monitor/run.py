@@ -529,7 +529,8 @@ def main():
         if not args.dry_run:
             json.dump(g, open(wf, "w"), indent=1)
     det = graph_details(g); engine = engine_of(g)
-    cls = config.classify_path(CFG, project_rel_path(det["save_path"] or "") + ".png")
+    rel = project_rel_path(det["save_path"] or "")
+    cls = config.classify_path(CFG, rel + ("x.png" if rel.endswith("/") else ".png"))   # a path that ends at a folder: classify the folder
     if args.dry_run:
         where = f"{cls[0]['id']} / {cls[1]}" + (f" / {cls[2]}" if cls[2] else "") + (f" ({cls[3]})" if cls[3] else "") if cls else "unclassified (shown under 'other')"
         print(f"[run] dry run: {os.path.relpath(wf, ROOT)} engine={engine} saves to {det['save_path']} -> {where}; nothing queued")
