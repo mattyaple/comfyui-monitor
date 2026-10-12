@@ -118,19 +118,21 @@ def title_from_workflow(extra, c):
 # ---- records --------------------------------------------------------------------------------------------------------
 
 def records_by_prompt():
+    """prompt id -> (record path, record), including records the user removed from the page (monitor/runs/_removed/),
+    so a removed run is not imported again from the history after a restart."""
     out = {}
-    d = runner.RUNS
-    if not os.path.isdir(d):
-        return out
-    for f in os.listdir(d):
-        if not f.endswith(".json"):
+    for d in (os.path.join(runner.RUNS, "_removed"), runner.RUNS):
+        if not os.path.isdir(d):
             continue
-        try:
-            r = json.load(open(os.path.join(d, f)))
-        except Exception:
-            continue
-        if r.get("prompt_id"):
-            out[r["prompt_id"]] = (os.path.join(d, f), r)
+        for f in os.listdir(d):
+            if not f.endswith(".json"):
+                continue
+            try:
+                r = json.load(open(os.path.join(d, f)))
+            except Exception:
+                continue
+            if r.get("prompt_id"):
+                out[r["prompt_id"]] = (os.path.join(d, f), r)
     return out
 
 
@@ -255,7 +257,7 @@ def tick():
                 pid, g, extra = it[1], it[2], it[3] if len(it) > 3 else {}
                 if pid in known:
                     path, rec = known[pid]
-                    if rec.get("via") == "ui" and rec.get("status") != state and rec.get("status") in ("queued", "running"):
+                    if "_removed" not in path and rec.get("via") == "ui" and rec.get("status") != state and rec.get("status") in ("queued", "running"):
                         rec["status"] = state; save_record(path, rec)
                     continue
                 if not belongs(g, c, scfg):
@@ -276,7 +278,7 @@ def tick():
             g, extra = (p[2] if len(p) > 2 else {}), (p[3] if len(p) > 3 else {})
             if pid in known:
                 path, rec = known[pid]
-                if rec.get("via") != "ui" or rec.get("status") not in ("queued", "running"):
+                if "_removed" in path or rec.get("via") != "ui" or rec.get("status") not in ("queued", "running"):
                     _state["seen_final"].add(pid); continue
             else:
                 msgs = {m[0]: (m[1] or {}).get("timestamp") for m in st.get("messages") or [] if isinstance(m, list) and len(m) > 1}
