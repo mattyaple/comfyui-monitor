@@ -33,6 +33,8 @@
   again from the history after a restart.
 - Fix: video thumbnails also find the ffmpeg that imageio-ffmpeg ships in a ComfyUI environment and `~/.local/bin`
   (Intel Macs without Homebrew). Without ffprobe the size and duration of a video are simply not shown.
+- Costs tab: videos are counted apart from images (images / videos columns, $ per image and $ per video, in the
+  team table and the CSV too); wide tables scroll inside their panel instead of overflowing.
 - Fix: run.py strips `paths.output_prefix` (or an absolute output root) from a graph's save path before classifying it, so
   `--dry-run` and the record's `kind`/`section` are right for graphs that save with an absolute path.
 - Fix: `config.load()` now compiles every collection's `group_regex` eagerly. Before, a fresh project with no run

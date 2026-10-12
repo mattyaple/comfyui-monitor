@@ -93,6 +93,9 @@ def _out_root(server):
         return config.load()["_paths"]["output_root"]
 
 
+VID_EXT = (".mp4", ".mov", ".webm", ".mkv")
+
+
 def my_rows():
     """This machine's billed runs for the project, one row each, plus credit-log rows not covered by a run record."""
     c = config.load(); lr = c["_paths"]["output_root"]; me = person(); rows = []; seen = set()
@@ -107,7 +110,9 @@ def my_rows():
         nsel = sum(1 for p in locs if os.path.isfile(p) and tags.marks(p).get("tagged"))
         rows.append({"id": r["id"], "prompt_id": r.get("prompt_id"), "day": (r.get("started") or "")[:10], "usd": float(cost.get("usd") or 0),
                      "credits": float(cost.get("credits") or 0), "model": r.get("model") or "—", "group": r.get("group") or r.get("page") or "—",
-                     "images": len(r.get("outputs") or []), "selects": nsel, "gen_seconds": r.get("gen_seconds"), "server": r.get("server") or "local",
+                     "images": sum(1 for o in r.get("outputs") or [] if not str(o).lower().endswith(VID_EXT)),
+                     "videos": sum(1 for o in r.get("outputs") or [] if str(o).lower().endswith(VID_EXT)),
+                     "selects": nsel, "gen_seconds": r.get("gen_seconds"), "server": r.get("server") or "local",
                      "title": r.get("title"), "api_calls": cost.get("api_calls"), "source": "run", "person": me})
     for lg in credit_log_rows():
         if lg.get("prompt_id") in seen:
@@ -232,6 +237,7 @@ def summary(period="all"):
                          "group": "—", "images": 0, "selects": 0, "gen_seconds": None, "server": "—", "title": e.get("note"), "source": "expense", "person": who, "expense": True})
     runs = [r for r in rows if not r.get("expense")]; exps = [r for r in rows if r.get("expense")]
     tot = {"usd": sum(r["usd"] for r in runs), "credits": sum(r["credits"] for r in runs), "runs": len(runs), "images": sum(r["images"] for r in runs),
+           "videos": sum(r.get("videos", 0) for r in runs),
            "selects": sum(r["selects"] for r in runs), "expenses_usd": sum(r["usd"] for r in exps)}
     tot["total_usd"] = tot["usd"] + tot["expenses_usd"]
     mine = [r for r in runs if r["person"] == me]
@@ -240,10 +246,15 @@ def summary(period="all"):
     def agg(key, src=runs):
         by = {}
         for r in src:
-            b = by.setdefault(r[key], {"key": r[key], "runs": 0, "images": 0, "usd": 0.0, "credits": 0.0, "selects": 0, "gen": 0.0, "gen_n": 0, "expenses_usd": 0.0})
+            b = by.setdefault(r[key], {"key": r[key], "runs": 0, "images": 0, "videos": 0, "usd": 0.0, "credits": 0.0, "selects": 0, "gen": 0.0, "gen_n": 0, "expenses_usd": 0.0,
+                                       "usd_images": 0.0, "usd_videos": 0.0})
             if r.get("expense"):
                 b["expenses_usd"] += r["usd"]; continue
-            b["runs"] += 1; b["images"] += r["images"]; b["usd"] += r["usd"]; b["credits"] += r["credits"]; b["selects"] += r["selects"]
+            b["runs"] += 1; b["images"] += r["images"]; b["videos"] += r.get("videos", 0); b["usd"] += r["usd"]; b["credits"] += r["credits"]; b["selects"] += r["selects"]
+            if r.get("videos", 0) and not r["images"]:
+                b["usd_videos"] += r["usd"]
+            elif r["images"]:
+                b["usd_images"] += r["usd"]
             if r.get("gen_seconds") is not None:
                 b["gen"] += r["gen_seconds"]; b["gen_n"] += 1
         for b in by.values():
@@ -274,11 +285,11 @@ def export_file(fmt="json", team=False):
         s = summary("all"); name = f"{code}_costs_team_{stamp}.csv"; p = os.path.join(d, name)
         with open(p, "w", newline="") as fh:
             w = csv.writer(fh)
-            w.writerow(["person", "date", "run", "group", "title", "model", "server", "images", "selects", "api_calls", "credits", "usd", "source", "prompt_id"])
+            w.writerow(["person", "date", "run", "group", "title", "model", "server", "images", "videos", "selects", "api_calls", "credits", "usd", "source", "prompt_id"])
             for r in sorted(s["recent_all"] if "recent_all" in s else _all_rows(), key=lambda r: (r["person"], r["day"], r["id"] or "")):
-                w.writerow([r["person"], r["day"], r["id"], r["group"], r.get("title"), r["model"], r["server"], r["images"], r["selects"], r.get("api_calls"),
+                w.writerow([r["person"], r["day"], r["id"], r["group"], r.get("title"), r["model"], r["server"], r["images"], r.get("videos", 0), r["selects"], r.get("api_calls"),
                             f"{r['credits']:.2f}", f"{r['usd']:.4f}", r.get("source"), r.get("prompt_id") or ""])
-            w.writerow([]); w.writerow(["TOTAL", "", "", "", "", "", "", s["totals"]["images"], s["totals"]["selects"], "", f"{s['totals']['credits']:.2f}", f"{s['totals']['total_usd']:.2f}", "runs + expenses", ""])
+            w.writerow([]); w.writerow(["TOTAL", "", "", "", "", "", "", s["totals"]["images"], s["totals"]["videos"], s["totals"]["selects"], "", f"{s['totals']['credits']:.2f}", f"{s['totals']['total_usd']:.2f}", "runs + expenses", ""])
     else:
         led = ledger(); name = f"{code}_costs_{slug(led['person'])}_{stamp}.json"; p = os.path.join(d, name)
         json.dump(led, open(p, "w"), indent=1)
