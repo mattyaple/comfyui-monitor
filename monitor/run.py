@@ -388,7 +388,7 @@ def graph_details(g):
             d["save_path"] = inp.get("filename_prefix")
         elif ct in ("SaveVideo", "SaveAudio", "SaveAudioMP3", "SaveWEBM", "SaveAnimatedWEBP") and isinstance(inp.get("filename_prefix"), str):
             d["save_path"] = d["save_path"] or inp.get("filename_prefix")
-        elif ct == "Image Save":
+        elif ct in ("Image Save", "SaveVideoToPath"):   # an output folder + prefix (WAS Image Save, the yaple video saver)
             d["save_path"] = f"{sval(g, inp.get('output_path'))}/{sval(g, inp.get('filename_prefix'))}"
     if isinstance(d.get("prompt"), list):   # the prompt is produced at run time (an LLM, a splitter): resolve it from the history afterwards
         d["prompt_link"] = d["prompt"]; d["prompt"] = ""
@@ -464,7 +464,7 @@ def save_nodes(g):
         ct, inp = n.get("class_type"), n.get("inputs", {})
         if ct in ("SaveImage", "SaveVideo", "SaveAudio", "SaveAudioMP3", "SaveWEBM", "SaveAnimatedWEBP"):
             out.append((nid, ct, sval(g, inp.get("filename_prefix"))))
-        elif ct == "Image Save":
+        elif ct in ("Image Save", "SaveVideoToPath"):   # an output folder + prefix (WAS Image Save, the yaple video saver)
             out.append((nid, ct, f"{sval(g, inp.get('output_path'))}/{sval(g, inp.get('filename_prefix'))}"))
     return out
 
@@ -510,7 +510,7 @@ def retarget(g):
     for n in g.values():
         if n.get("class_type") in ("SaveImage", "SaveVideo", "SaveAudio", "SaveAudioMP3", "SaveWEBM", "SaveAnimatedWEBP"):
             fix(n, "filename_prefix")
-        elif n.get("class_type") == "Image Save":
+        elif n.get("class_type") in ("Image Save", "SaveVideoToPath"):
             fix(n, "output_path"); fix(n, "filename_prefix")
     return changes
 

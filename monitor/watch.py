@@ -61,7 +61,7 @@ def save_folders(g):
     out = []
     for nid, n in g.items():
         ct, inp = n.get("class_type"), n.get("inputs", {})
-        if ct == "Image Save":
+        if ct in ("Image Save", "SaveVideoToPath"):
             p, ok = static_path(g, inp.get("output_path"))
             out.append((nid, p, ok))
         elif ct in ("SaveImage", "SaveVideo", "SaveAnimatedWEBP", "SaveWEBM"):
