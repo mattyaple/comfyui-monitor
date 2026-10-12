@@ -185,6 +185,7 @@ def _derive(cfg):
         col.setdefault("sections", [{"id": "option", "label": "Options", "sub": "", "color": col.get("color", "#ffcf33")}] if col["kind"] == "shots" else [])
         col.setdefault("select", {"mode": "tag"})
         col["versioned"] = bool(v.get("enabled")) and ("{version}" in (col.get("dir") or "") or "{staging}" in (col.get("dir") or ""))
+        col["_grx"] = re.compile(col.get("group_regex") or ".*")   # eager: listings need it before any run is indexed
     cfg["costs"]["client"] = cfg["costs"].get("client") or pr.get("client") or ""
     cfg["costs"]["project"] = cfg["costs"].get("project") or pr.get("name") or pr.get("code") or ""
     return cfg
