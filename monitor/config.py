@@ -90,6 +90,13 @@ DEFAULTS = {
         "ui_title_node": "Run Title",  # a string node with this title in the UI graph names the run on its card
     },
     "selects": {"tags": {"select": "Yellow", "ng": "Red"}},
+    "pairs": {                # "final pair": an image plus the source image it was made from (its run's first input), copied together
+        "enabled": False,
+        "dest": "{selects_root}/{group}/Final",   # folder pattern: {selects_root} {output_root} {group} {section} {shot} (the section folder's last part)
+        "names": ["{shot}_A", "{shot}_B"],        # file names of the copies (source, image); the extension is kept
+        "tag": "Green",                           # Finder label set on both originals (kept alongside the select tag)
+        "unpair": "z_old",                        # what unmarking does with the copies: z_old | delete | keep
+    },
     "export": {
         "enabled": True,
         "footer": "{client} · {title} · {date}",
@@ -265,6 +272,25 @@ def validate(cfg):
         subs = [s.get("sub") for s in col.get("sections") or []]
         if col.get("kind") == "shots" and subs.count("") != 1:
             errs.append(f"collections[{col.get('id')}].sections: exactly one section with sub \"\" (the base section)")
+        for sec in col.get("sections") or []:
+            try:
+                re.compile(sec.get("file_regex") or "")
+            except re.error as e:
+                errs.append(f"collections[{col.get('id')}].sections[{sec.get('id')}].file_regex: {e}")
+        by_sub = {}
+        for sec in col.get("sections") or []:
+            by_sub.setdefault(sec.get("sub") or "", []).append(sec)
+        for sub, secs in by_sub.items():
+            if len(secs) > 1 and sum(1 for x in secs if not x.get("file_regex")) > 1:
+                errs.append(f"collections[{col.get('id')}].sections: several sections share the folder '{sub}' without a file_regex to tell them apart")
+    pr = cfg.get("pairs") or {}
+    if pr.get("enabled"):
+        if not pr.get("dest"):
+            errs.append("pairs.dest: required when pairs are enabled")
+        if not (isinstance(pr.get("names"), list) and len(pr["names"]) == 2):
+            errs.append("pairs.names: two name patterns (source, image)")
+        if pr.get("unpair") not in (None, "z_old", "delete", "keep"):
+            errs.append("pairs.unpair: z_old, delete or keep")
     for rx, _ in cfg["runs"].get("ref_roles") or []:
         try:
             re.compile(rx)
@@ -304,6 +330,22 @@ def section(col, sid):
     return next((s for s in col.get("sections") or [] if s["id"] == sid), None)
 
 
+def section_for_file(col, sub, name):
+    """The section id of a file in subfolder `sub`: among the sections sharing that folder, the first whose `file_regex`
+    matches the name (without extension), else the first without a regex (the folder's default). None: no such section."""
+    stem = os.path.splitext(name or "")[0]
+    cands = [s for s in col.get("sections") or [] if (s.get("sub") or None) == sub]
+    for s in cands:
+        if s.get("file_regex") and re.search(s["file_regex"], stem):
+            return s["id"]
+    return next((s["id"] for s in cands if not s.get("file_regex")), None)
+
+
+def section_accepts(col, s, name):
+    """Does section `s` list file `name` of its folder? (file_regex sections take their matches; the default takes the rest.)"""
+    return section_for_file(col, s.get("sub") or None, name) == s["id"]
+
+
 def base_section(col):
     return next((s for s in col.get("sections") or [] if not s.get("sub")), None)
 
@@ -326,7 +368,7 @@ def matcher(cfg, col):
         d = re.escape(fmt(d, **cfg["_vars"], version="\x00", staging="\x00")).replace("\x00", _vpat(cfg))
     else:
         d = re.escape(fmt(d, **cfg["_vars"], version="", staging=""))
-    subs = [re.escape(s["sub"]) for s in col.get("sections") or [] if s.get("sub")]
+    subs = list(dict.fromkeys(re.escape(s["sub"]) for s in col.get("sections") or [] if s.get("sub")))
     sub = f"(?:(?P<sub>{'|'.join(subs)})/)?" if subs else ""
     depth = col.get("depth", 1) if col.get("kind") == "folders" else 1
     group = r"[^/]+" if depth == 1 else r"[^/]+(?:/[^/]+)?" if depth == 2 else r".+?"
@@ -363,7 +405,7 @@ def classify_path(cfg, rel):
         else:
             ver = ""
         sub = m.group("sub") if "sub" in m.groupdict() else None
-        sid = next((s["id"] for s in col.get("sections") or [] if (s.get("sub") or None) == sub), None)
+        sid = section_for_file(col, sub, m.group("file"))
         if sid is None and col.get("kind") == "shots":
             continue
         return col, group, sid, ver
@@ -391,6 +433,16 @@ def select_dest(cfg, col, group, sid=None, ver=None):
     pat = (sel.get("section_dest") or {}).get(sid) or sel.get("dest")
     g = (sel.get("dest_map") or {}).get(group, group)
     return expand(pat, {**cfg["_vars"], **version_vars(cfg, ver), "group": g, "section": sid or ""})
+
+
+def pair_dest(cfg, col, group, sid=None, ver=None):
+    """Absolute folder the final pairs of a group go to, or None when pairs are off."""
+    pr = cfg.get("pairs") or {}
+    if not pr.get("enabled") or not pr.get("dest"):
+        return None
+    s = section(col, sid) if sid else None
+    shot = os.path.basename((s or {}).get("sub") or "") or group
+    return expand(pr["dest"], {**cfg["_vars"], **version_vars(cfg, ver), "group": group, "section": sid or "", "shot": shot})
 
 
 def category_style(cfg):

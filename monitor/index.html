@@ -262,6 +262,8 @@
   .errs { color:var(--err); font-size:12px; white-space:pre-wrap; margin:8px 0; }
   .okmsg { color:var(--ok); font-size:12px; margin:8px 0; }
   details.adv summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  .btn.pairbtn.on { border-color:#7cfc9a; color:#7cfc9a; }
+  .tile .pairmark { position:absolute; left:6px; top:6px; background:rgba(0,0,0,.55); color:#7cfc9a; border:1px solid #7cfc9a; border-radius:4px; padding:0 5px; font-size:11px; line-height:16px; pointer-events:none; }
 </style>
 </head>
 <body>
@@ -298,13 +300,14 @@
     <span class="spacer"></span>
     <button class="btn selbtn" id="lbSel" onclick="lbToggleSelect()">★ Select (S)</button>
     <button class="btn ngbtn" id="lbNg" onclick="lbToggleNg()">✕ Mark NG (X)</button>
+    <button class="btn pairbtn" id="lbPair" onclick="lbTogglePair()" hidden title="Final pair (P): copy this image and the source image it was made from into the final folder">◆ Final pair (P)</button>
     <button class="btn" id="lbInfoBtn" onclick="lbToggleInfo()" title="Show or hide the generation details (I)">ⓘ Info (I)</button>
     <button class="btn" id="lbReveal" onclick="lbReveal()" title="Show the file in Finder (F)">Show in Finder (F)</button>
     <button class="btn" onclick="lbClose()">✕ Esc</button>
   </div>
   <div class="stage" id="lbStage"><span class="nav prev" onclick="lbStep(-1)">‹</span><img id="lbImg" alt="" draggable="false"><span class="nav next" onclick="lbStep(1)">›</span></div>
   <div id="lbInfo" hidden></div>
-  <div class="keys">← → previous / next image · ↑ ↓ previous / next group · S select · X mark NG · hold click or C: compare with source · I info · F show in Finder · Esc close</div>
+  <div class="keys">← → previous / next image · ↑ ↓ previous / next group · S select · X mark NG · P final pair · hold click or C: compare with source · I info · F show in Finder · Esc close</div>
 </div>
 <main>
   <div id="view-runs">
@@ -542,7 +545,7 @@ function runHtml(r, idx) {
   const collapsed = runCollapsed[r.id] ?? ($('#autoCollapse').checked && idx >= (CFG.runs.collapse_after ?? 2) && r.status === 'done');
   const outs = (r.images || []).map((im, k) => { const it = runImageItem(r, im), sel = isSelIm(it), bad = isNg(it);
     if (bad && optHideNg) return '';
-    return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}" style="--ar:${runAr(r, im)}" onclick="return openRunImage(event,'${r.id}',${k})"><img loading="lazy" src="${thumbUrl(im, 900)}"${im.w && im.h ? '' : ' onload="runTileLoaded(this)"'}><span class="cap">${capHtml(im.name)}</span>${markBtns(sel, bad, `runMark(event,'${r.id}',${k},`)}</a>`; }).join('');
+    return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}" style="--ar:${runAr(r, im)}" onclick="return openRunImage(event,'${r.id}',${k})"><img loading="lazy" src="${thumbUrl(im, 900)}"${im.w && im.h ? '' : ' onload="runTileLoaded(this)"'}><span class="cap">${capHtml(im.name)}</span>${im.pair ? '<span class="pairmark" title="final pair">◆ final</span>' : ''}${markBtns(sel, bad, `runMark(event,'${r.id}',${k},`)}</a>`; }).join('');
   const syncing = r.syncing || [], missing = Math.max(0, (r.batch || 4) - r.outputs.length - syncing.length);
   const ph = (isActive(r) ? Array(missing).fill(`<div class="placeholder" style="--ar:${runAr(r)}">rendering…</div>`).join('') : '')
            + syncing.map(o => `<div class="placeholder" style="--ar:${runAr(r)}">rendered · waiting for the remote mirror<br>${esc(base(o))}</div>`).join('');
@@ -680,6 +683,17 @@ async function setSelect(im, on) {
   return true;
 }
 
+async function setPair(im, on) {
+  const r = await post(`/api/pair?${qs(im)}&on=${on ? 1 : 0}`).catch(e => ({ok: false, error: String(e)}));
+  if (!r.ok) { toast('Final pair failed: ' + r.error, 7000); return false; }
+  syncMark(im.src, {pair: !!r.pair}); im.pair = !!r.pair;
+  if (r.source_src) syncMark(r.source_src, {pair: !!r.pair});
+  toast(r.pair ? `◆ Final pair for ${r.shot}: ${r.source} + ${r.file} → ${r.dest}` : `${r.shot}: final pair removed from ${r.dest}`, 6000);
+  return true;
+}
+const pairable = im => !!(CFG.pairs && CFG.pairs.enabled && im.col && (colById(im.col) || {}).kind === 'shots' && (im.run || im.tagged !== undefined));
+function lbTogglePair() { const im = lb.items[lb.i]; if (!im || !pairable(im)) return; setPair(im, !im.pair).then(ok => { if (ok) lbShow(); }); }
+
 // ---- lightbox -------------------------------------------------------------------------------------------------------------
 let lb = {items: [], i: 0, action: null};
 function lbOpen(items, i, action) { lb = {items, i, action}; $('#lb').hidden = false; lbShow(); return false; }
@@ -693,6 +707,7 @@ function lbShow() {
   $('#lbSel').classList.toggle('on', sel); $('#lbSel').textContent = sel ? '★ Selected (S)' : '★ Select (S)'; $('#lbSel').title = sel ? 'Selected · click or S to unmark' : 'Mark select (S)';
   $('#lbNg').classList.toggle('on', bad); $('#lbNg').textContent = bad ? '✕ NG (X)' : '✕ Mark NG (X)'; $('#lbNg').title = bad ? 'NG · click or X to clear' : 'Mark NG (X)';
   $('#lbSel').hidden = $('#lbNg').hidden = !im.selectable;
+  $('#lbPair').hidden = !pairable(im); $('#lbPair').classList.toggle('on', !!im.pair); $('#lbPair').textContent = im.pair ? '◆ Final pair ✓ (P)' : '◆ Final pair (P)';
   lbHeld = false; $('#lbStage').classList.remove('cmp'); $('#lbCmp').classList.remove('on');
   const cmp = lbCompare(im); $('#lbCmp').hidden = !cmp;
   if (cmp) { $('#lbCmp').textContent = `⇄ hold: ${cmp.kind} ${cmp.name.replace(/\.[^.]+$/, '')}`; (new Image()).src = cmpUrl(cmp); }
@@ -773,7 +788,7 @@ document.addEventListener('keydown', e => {
   const k = e.key;
   if (k === 'ArrowRight') lbStep(1); else if (k === 'ArrowLeft') lbStep(-1); else if (k === 'ArrowDown') lbGroup(1); else if (k === 'ArrowUp') lbGroup(-1);
   else if (k === 's' || k === 'S' || k === ' ') lbToggleSelect(); else if (k === 'x' || k === 'X') lbToggleNg(); else if (k === 'c' || k === 'C') lbHold(true);
-  else if (k === 'i' || k === 'I') lbToggleInfo(); else if (k === 'f' || k === 'F') lbReveal(); else if (k === 'Enter' || k === 'Escape') lbClose(); else return;
+  else if (k === 'i' || k === 'I') lbToggleInfo(); else if (k === 'f' || k === 'F') lbReveal(); else if (k === 'p' || k === 'P') lbTogglePair(); else if (k === 'Enter' || k === 'Escape') lbClose(); else return;
   e.preventDefault();
 });
 // a run's image as a lightbox / marks item: its own place in the collections (server: col / grp / sec / ver), else the run's
@@ -853,7 +868,7 @@ const capHtml = name => { const m = /^(.*?)(_\d+_?)?$/.exec(name.replace(/\.[^.]
 const arSeen = {};
 function tileLoaded(img, i) { const im = optVisible[i]; if (im && !(im.w && im.h) && img.naturalWidth) img.style.aspectRatio = arSeen[im.src] = img.naturalWidth + '/' + img.naturalHeight; }
 const tileHtml = (im, i) => { const sel = isSelIm(im), bad = isNg(im), ar = im.w && im.h ? im.w + '/' + im.h : arSeen[im.src];
-  return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}${optPicked.has(im.src) ? ' picked' : ''}" title="${esc(im.caption)}" data-i="${i}" onclick="return openOpt(event,${i})"><img loading="lazy" src="${thumbUrl(im, optThumbW())}"${ar ? ` style="aspect-ratio:${ar}"` : ''} onload="tileLoaded(this,${i})"><span class="cap">${capHtml(im.name)}</span>${markBtns(sel, bad, `optMark(event,${i},`)}</a>`; };
+  return `<a href="${fullUrl(im)}" class="tile${sel ? ' selected' : ''}${bad ? ' ng' : ''}${optPicked.has(im.src) ? ' picked' : ''}" title="${esc(im.caption)}" data-i="${i}" onclick="return openOpt(event,${i})"><img loading="lazy" src="${thumbUrl(im, optThumbW())}"${ar ? ` style="aspect-ratio:${ar}"` : ''} onload="tileLoaded(this,${i})"><span class="cap">${capHtml(im.name)}</span>${im.pair ? '<span class="pairmark" title="final pair">◆ final</span>' : ''}${markBtns(sel, bad, `optMark(event,${i},`)}</a>`; };
 let optPend = {};
 function groupHead(page, g) {
   const col = curCol(), nSel = g.items.filter(isSelIm).length, nNg = g.items.filter(isNg).length, nRun = (optPend[page] || []).length, secs = colSecs(col);
@@ -1160,6 +1175,9 @@ const FIELDS = [
              ['paths.selects_root', 'text', 'Selects root', 'where copy-mode selects go (a client Dropbox): {selects_root} in collection destinations'], ['paths.moved_lookup', 'list', 'Moved-file lookup', 'folders (one per line) where files get moved by hand; the monitor finds a run\'s files there by name']]],
   ['Versions', [['versions.enabled', 'bool', 'Versioned rounds', 'V1, V2…: each version is a frozen round of work'], ['versions.current', 'text', 'Current version', 'V3'], ['versions.first', 'number', 'First version with this layout'],
                 ['versions.folder', 'text', 'Version folder', 'V{n}'], ['versions.staging', 'text', 'Remote staging folder', 'V{n}_Staging: where a remote server saves before collect.py moves the files into the version folder'], ['versions.file_suffix', 'text', 'File suffix', '_v{n}, part of collected file names'], ['versions.refuse_frozen', 'bool', 'Refuse graphs that save into an older version', 'run.py --retarget moves them to the current one']]],
+  ['Final pairs', [['pairs.enabled', 'bool', 'Final pairs', 'mark an image together with the source image it was made from (its run\'s first input); both are copied to the destination'],
+                   ['pairs.dest', 'text', 'Destination', '{selects_root} {output_root} {group} {section} {shot} (the section folder\'s last part)'], ['pairs.tag', 'select', 'Pair tag', 'Finder label set on both originals', ['Green', 'Purple', 'Blue', 'Orange', 'Gray']],
+                   ['pairs.unpair', 'select', 'On unmark', 'what happens to the copies', ['z_old', 'delete', 'keep']]]],
   ['Selects and naming', [['selects.tags.select', 'select', 'Select tag', '', ['Yellow', 'Green', 'Purple', 'Blue', 'Orange', 'Gray', 'Red']], ['selects.tags.ng', 'select', 'NG tag', '', ['Red', 'Orange', 'Gray', 'Purple', 'Blue', 'Green', 'Yellow']], ['naming.strip_trailing_underscore', 'bool', 'Strip the trailing underscore', 'name_00001_.png → name_00001.png']]],
   ['Export', [['export.enabled', 'bool', 'Export tab'], ['export.default_template', 'select', 'Default template', '', ['contact', 'review']], ['export.footer', 'text', 'Footer', '{client} {title} {code} {date}'],
               ['export.templates.contact.enabled', 'bool', 'Contact sheet'], ['export.templates.contact.label', 'text', 'Contact sheet label'], ['export.templates.contact.format', 'select', 'Contact default format', '', ['jpg', 'pdf']], ['export.templates.contact.columns', 'number', 'Contact columns'], ['export.templates.contact.thumb', 'number', 'Contact tile px (JPG)'], ['export.templates.contact.captions', 'bool', 'Contact captions'], ['export.templates.contact.group_headers', 'bool', 'Contact group headers'],
@@ -1192,7 +1210,7 @@ function colHtml(c, i) {
   const sel = c.select || {}, shots = c.kind === 'shots';
   const txt = (k, label, hint, w) => `<span class="lab">${label}</span><div><input type="text" data-c="${i}" data-k="${k}" value="${esc(getP(c, k) ?? '')}"${w ? ` style="max-width:${w}px"` : ''}>${hint ? ` <span class="small">${esc(hint)}</span>` : ''}</div>`;
   const segm = (k, vals) => `<span class="vtoggle">${vals.map(([v, l]) => `<a data-c="${i}" data-k="${k}" data-v="${v}" class="${getP(c, k) === v ? 'on' : ''}">${l}</a>`).join('')}</span>`;
-  const secs = (c.sections || []).map((s, j) => `<div class="secrow"><input type="text" data-c="${i}" data-s="${j}" data-k="id" value="${esc(s.id)}" placeholder="id"><input type="text" data-c="${i}" data-s="${j}" data-k="label" value="${esc(s.label || '')}" placeholder="Label"><input type="text" data-c="${i}" data-s="${j}" data-k="sub" value="${esc(s.sub || '')}" placeholder="subfolder ('' = base)"><input type="color" data-c="${i}" data-s="${j}" data-k="color" value="${esc(s.color || c.color || '#8b95a3')}"><select data-c="${i}" data-s="${j}" data-k="compare"><option value="">compare: —</option><option value="source" ${s.compare === 'source' ? 'selected' : ''}>compare: source image</option><option value="hash" ${s.compare === 'hash' ? 'selected' : ''}>compare: by content</option></select><button class="ico" title="Remove section" onclick="colSec(${i},${j},'del')">✕</button></div>`).join('');
+  const secs = (c.sections || []).map((s, j) => `<div class="secrow"><input type="text" data-c="${i}" data-s="${j}" data-k="id" value="${esc(s.id)}" placeholder="id"><input type="text" data-c="${i}" data-s="${j}" data-k="label" value="${esc(s.label || '')}" placeholder="Label"><input type="text" data-c="${i}" data-s="${j}" data-k="sub" value="${esc(s.sub || '')}" placeholder="subfolder ('' = base)"><input type="text" data-c="${i}" data-s="${j}" data-k="file_regex" value="${esc(s.file_regex || '')}" placeholder="file regex (shares a folder)" title="Optional: a file-name pattern (without extension); sections sharing a subfolder are told apart by it, the one without a pattern takes the rest"><input type="color" data-c="${i}" data-s="${j}" data-k="color" value="${esc(s.color || c.color || '#8b95a3')}"><select data-c="${i}" data-s="${j}" data-k="compare"><option value="">compare: —</option><option value="source" ${s.compare === 'source' ? 'selected' : ''}>compare: source image</option><option value="hash" ${s.compare === 'hash' ? 'selected' : ''}>compare: by content</option></select><button class="ico" title="Remove section" onclick="colSec(${i},${j},'del')">✕</button></div>`).join('');
   return `<div class="colcard"><div class="colhead"><span class="swatch" style="background:${esc(c.color || '#8b95a3')}"></span><b>${esc(c.id)}</b><span class="small">${esc(c.label)} · ${shots ? 'groups with sections' : 'plain folders'}</span><span class="spacer"></span>
       <button class="btn quiet" onclick="colMove(${i},-1)" ${i === 0 ? 'disabled' : ''}>↑</button><button class="btn quiet" onclick="colMove(${i},1)" ${i === draft.collections.length - 1 ? 'disabled' : ''}>↓</button><button class="btn danger" onclick="colDel(${i})">Remove</button></div>
     <div class="form">

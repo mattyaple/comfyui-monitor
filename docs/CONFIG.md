@@ -74,7 +74,7 @@ The list that drives the Selects tab (one segment each), the classification of r
 | `dir` | the collection folder under `output_root`; `{version}` makes it versioned; `""` = the root itself (groups are its subfolders, other collections' folders excluded) |
 | `group_regex` | (shots) a subfolder must match it to count as a group (`^(Page-\d+[ab]|Back-Cover)$`) |
 | `file_name` | (shots) name pattern for collected base-section files, numbered per group and version |
-| `sections` | (shots) exactly one with `sub: ""` (the base section) plus any sub-folders. `compare`: `source` = the first input of a run in this section is the group image it was made from (hold-to-compare shows it); `hash` = a run whose input matches a file in this section by content shows that file (plates) |
+| `sections` | (shots) exactly one with `sub: ""` (the base section) plus any sub-folders. Several sections may share one `sub` when all but one carry a `file_regex` (matched against the file name without extension): the matching section takes the file, the one without a pattern takes the rest (start frames `HERO-PAIR_001` and end frames `HERO-PAIR_B_001` in one folder). `compare`: `source` = the first input of a run in this section is the group image it was made from (hold-to-compare shows it); `hash` = a run whose input matches a file in this section by content shows that file (plates) |
 | `depth` | (folders) 1 = subfolders are groups; 2 = one nested level too (`env_Classroom/front`); 0 = every folder with images, newest first (tests) |
 | `section_from_name` | (folders) regex with one group, applied to a file name without its counter; the capture is the file's section (`_ref_(.+)$` → `face`, `turn_3q`); no match = `other`. `section_order`: prefixes in display order |
 | `select.mode` | `tag`: Finder's select tag on the file, nothing copied. `copy`: also copied into `dest` |
@@ -100,6 +100,21 @@ an optional leading `{code}/`. A path no collection matches is category `other` 
 
 `tags.select` (Yellow), `tags.ng` (Red): the Finder label colors used as marks. Finder shows them; `tools/selects_index.py`
 reads them back. The two are exclusive.
+
+## pairs
+
+A "final pair" is an image together with the source image it was made from (the first input of the run that produced it:
+an end frame and its start frame). Marking one (the lightbox's ◆ button or P) copies both into `dest` under `names` and
+sets the `tag` Finder label on both originals, beside the select tag; `_pairs.json` in the destination remembers which
+files form the pair. A new pair for the same `{shot}` replaces the previous one (its copies go to `Z_OLD/`).
+
+| key | default | meaning |
+|---|---|---|
+| `enabled` | false | the ◆ button and the P key |
+| `dest` | `{selects_root}/{group}/Final` | folder pattern; `{shot}` is the last part of the section's folder (`DET-HEEL`), `{section}` its id |
+| `names` | `["{shot}_A", "{shot}_B"]` | file names of the copies (source, image); the extension is kept |
+| `tag` | Green | Finder label on both originals |
+| `unpair` | z_old | what unmarking does with the copies: `z_old`, `delete`, `keep` |
 
 ## naming
 

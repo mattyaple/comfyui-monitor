@@ -23,6 +23,7 @@ GET
 POST
   /api/select?src=&srv=&col=&group=&sec=&v=&on=1|0   mark a select (tag mode: Finder's yellow tag; copy mode: also copied to the collection's dest)
   /api/ng?src=&srv=&on=1|0                           mark NG (Finder's red tag; exclusive with select)
+  /api/pair?src=&srv=&on=1|0                         final pair: copy the image + its source image into pairs.dest, tag both (pairs in project.json)
   /api/reveal?src=&srv=                              show the file in Finder
   /api/reroll?id=&dry=0|1                            re-run a run's graph with a new seed (retargeted to the current version)
   /api/run/remove?id=                                move a run record into runs/_removed/
@@ -485,7 +486,7 @@ def collection_listing(col_id, ver=None):
                 d = config.group_dir(c, col, g, sid, ver)
                 dest = config.select_dest(c, col, g, sid, ver); dests[s["id"]] = dest
                 meta = sources_meta(d); ds = dest_names(dest)
-                files += [file_entry(c, col, g, s["id"], ver, d, f, meta, idx, ds) for f in list_images(d)]
+                files += [file_entry(c, col, g, s["id"], ver, d, f, meta, idx, ds) for f in list_images(d) if config.section_accepts(col, s, f)]
             files.sort(key=lambda e: e["name"], reverse=True)
             groups.append({"group": g, "files": files, "dest": {k: (os.path.relpath(v, c["_root"]) if v and v.startswith(c["_root"]) else v) for k, v in dests.items() if v}})
     else:
@@ -581,6 +582,106 @@ def mark_select(src, srv, col_id, group, sid, ver, on):
     out["sel"] = on
     if dest:
         out["dest"] = os.path.relpath(dest, c["_root"]) if dest.startswith(c["_root"]) else dest
+    return out
+
+
+def pairs_index(dest):
+    p = os.path.join(dest, "_pairs.json")
+    try:
+        return json.load(open(p))
+    except Exception:
+        return {}
+
+
+def write_pairs_index(dest, idx):
+    os.makedirs(dest, exist_ok=True)
+    tmp = os.path.join(dest, "_pairs.json.tmp"); json.dump(idx, open(tmp, "w"), indent=1); os.replace(tmp, os.path.join(dest, "_pairs.json"))
+
+
+def pair_source_of(rel, col, group, ver):
+    """The source image of an output (the first input of the run that made it): (rel path under output_root or None, abs path or None)."""
+    prov = run_index().get(rel) or {}
+    rec = next((r for r in read_runs() if r.get("id") == prov.get("run")), None) if prov.get("run") else None
+    refs = (rec or {}).get("refs") or []
+    if not refs:
+        return None, None
+    name = os.path.basename(refs[0])
+    hit = find_group_file(col, group, name, ver or None)
+    if hit:
+        return hit
+    q = os.path.join(cfg()["_paths"]["comfy_input"], refs[0])
+    return (None, q) if os.path.isfile(q) else (None, None)
+
+
+def mark_pair(src, srv, on):
+    """Mark an image as a final pair with its source image: both are copied into pairs.dest under pairs.names and tagged."""
+    c = cfg(); pr = c.get("pairs") or {}
+    if not pr.get("enabled"):
+        return {"ok": False, "error": "final pairs are not enabled (Settings → Final pairs)"}
+    p = resolve(src, srv)
+    if not p or not p.startswith(local_root() + "/"):
+        return {"ok": False, "error": "only files in the local output folder can be paired"}
+    rel = os.path.relpath(p, local_root()); hit = config.classify_path(c, rel)
+    if not hit or hit[0].get("kind") != "shots":
+        return {"ok": False, "error": "this image is not in a unit folder of the project"}
+    col, group, sid, ver = hit
+    dest = config.pair_dest(c, col, group, sid, ver)
+    if not dest:
+        return {"ok": False, "error": "pairs.dest is not set"}
+    s = config.section(col, sid) if sid else None
+    shot = os.path.basename((s or {}).get("sub") or "") or group
+    names = pr.get("names") or ["{shot}_A", "{shot}_B"]
+    a_name, b_name = (config.expand(n, {**c["_vars"], "group": group, "section": sid or "", "shot": shot}) for n in names[:2])
+    src_rel, src_abs = pair_source_of(rel, col, group, ver)
+    tag = pr.get("tag") or "Green"
+    idx = pairs_index(dest); cur = idx.get(shot) or {}
+    if on:
+        if not src_abs:
+            return {"ok": False, "error": "no source image is recorded for this run (its first input), so there is nothing to pair it with"}
+        probe = dest
+        while probe and not os.path.isdir(probe):
+            probe = os.path.dirname(probe)
+        if not probe or probe in ("/", os.path.expanduser("~")):
+            return {"ok": False, "error": f"pair destination not reachable: {dest} (is the volume mounted?)"}
+        os.makedirs(dest, exist_ok=True)
+        # a new pair for this shot replaces the previous one: its copies go to Z_OLD, its originals lose the tag
+        for key in ("image", "source"):
+            old_rel = cur.get(key)
+            if old_rel and old_rel != (rel if key == "image" else src_rel):
+                op = os.path.join(local_root(), old_rel)
+                if os.path.isfile(op):
+                    finder_label(op, tag, False, exclusive=False)
+        for f in os.listdir(dest) if os.path.isdir(dest) else []:
+            stem = os.path.splitext(f)[0]
+            if stem in (a_name, b_name) and f.lower().endswith(IMG_EXT):
+                os.makedirs(os.path.join(dest, "Z_OLD"), exist_ok=True)
+                k, target = 0, os.path.join(dest, "Z_OLD", f)
+                while os.path.exists(target):
+                    k += 1; target = os.path.join(dest, "Z_OLD", f"{stem}_{k}{os.path.splitext(f)[1]}")
+                shutil.move(os.path.join(dest, f), target)
+        a_file = a_name + os.path.splitext(src_abs)[1]; b_file = b_name + os.path.splitext(p)[1]
+        shutil.copy2(src_abs, os.path.join(dest, a_file)); shutil.copy2(p, os.path.join(dest, b_file))
+        idx[shot] = {"image": rel, "source": src_rel or src_abs, "copies": [a_file, b_file], "when": datetime.now().isoformat(timespec="seconds")}
+        write_pairs_index(dest, idx)
+        finder_label(p, tag, True, exclusive=False)
+        if src_rel:
+            finder_label(os.path.join(local_root(), src_rel), tag, True, exclusive=False)
+    else:
+        how = pr.get("unpair", "z_old")
+        for f in cur.get("copies") or []:
+            fp = os.path.join(dest, f)
+            if os.path.isfile(fp):
+                if how == "z_old":
+                    os.makedirs(os.path.join(dest, "Z_OLD"), exist_ok=True); shutil.move(fp, os.path.join(dest, "Z_OLD", f))
+                elif how == "delete":
+                    os.remove(fp)
+        idx.pop(shot, None); write_pairs_index(dest, idx)
+        finder_label(p, tag, False, exclusive=False)
+        for q in (os.path.join(local_root(), cur["source"]) if cur.get("source") and not os.path.isabs(cur["source"]) else cur.get("source"), os.path.join(local_root(), src_rel) if src_rel else None):
+            if q and os.path.isfile(q) and q.startswith(local_root() + "/"):
+                finder_label(q, tag, False, exclusive=False)
+    out = {"ok": True, "pair": on, "shot": shot, "file": os.path.basename(p), "dest": os.path.relpath(dest, c["_root"]) if dest.startswith(c["_root"]) else dest,
+           "source": os.path.basename(src_abs) if src_abs else None, "source_src": ("out:" + src_rel) if src_rel else None, "copies": [a_name, b_name] if on else []}
     return out
 
 
@@ -738,6 +839,8 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json(mark_select(g1("src"), g1("srv") or None, g1("col"), g1("group"), g1("sec"), g1("v"), g1("on", "1") != "0"))
             if u.path == "/api/ng":
                 return self.send_json(mark_ng(g1("src"), g1("srv") or None, g1("on", "1") != "0"))
+            if u.path == "/api/pair":
+                return self.send_json(mark_pair(g1("src"), g1("srv") or None, g1("on", "1") != "0"))
             if u.path == "/api/reveal":
                 return self.send_json(reveal(g1("src"), g1("srv") or None))
             if u.path == "/api/export":

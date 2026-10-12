@@ -2,6 +2,9 @@
 
 ## 0.2.0 (2026-10-12)
 
+- New: sections may share a folder and be told apart by `file_regex` (start and end frames of one shot in one folder).
+- New: final pairs (`pairs` in project.json, ◆ / P in the lightbox): an image and the source image it was made from are
+  copied together into a final folder as `{shot}_A` + `{shot}_B` and tagged (Green); `/api/pair`.
 - New: runs queued from the ComfyUI interface are recorded too (`monitor/watch.py`, `runs.watch_ui`, on by default). The
   watcher polls `/queue` and `/history` of every local server, builds the same record run.py would (prompt, references,
   model, seed, batch, outputs, timing, billed cost) for prompts that save into the project's output tree, marks them

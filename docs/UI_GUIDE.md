@@ -91,5 +91,6 @@ These came out of reviewing hundreds of images per session; the page must stay s
   gold = select, red = NG, accent = picked / compare / running, amber = queued / warning, green = ok / remote-mirror
   categories kept muted.
 - Tiles keep the image's own shape; nothing is cropped. Captions sit on the tile, not under it.
+- **Final pair** (◆ button in the lightbox, or P; `pairs` in Settings): copies the image and the source image it was made from into the final folder (`{shot}_A` + `{shot}_B`) and tags both originals; tiles show a `◆ final` badge. Marking another image of the same shot replaces the pair.
 - Every destructive or paid action asks once (re-roll, remove, delete export); marks never ask.
 - Check a layout change with a screenshot at a wide and a narrow width before calling it done.

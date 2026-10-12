@@ -47,12 +47,12 @@ def labels(path):
     return out
 
 
-def set_label(path, color, on):
-    """Set or clear Finder's <color> label on a file, keeping unrelated tags. The two marks are exclusive: setting one
-    clears the other."""
+def set_label(path, color, on, exclusive=True):
+    """Set or clear Finder's <color> label on a file, keeping unrelated tags. The select and NG marks are exclusive: setting
+    one clears the other (exclusive=True); another label (the final-pair tag) is set beside them (exclusive=False)."""
     sel, ng = colors()
     read = lambda a: bytes.fromhex("".join(subprocess.run(["xattr", "-px", a, path], capture_output=True, text=True).stdout.split()))
-    drop = {sel, ng} if on else {color}
+    drop = ({sel, ng} if exclusive else set()) | {color} if on else {color}
     try:
         raw = read(TAGS_ATTR)
         tags = [t for t in (plistlib.loads(raw) if raw else []) if t.split("\n")[0] not in drop] + ([f"{color}\n{LABEL_IDX[color]}"] if on else [])
@@ -72,9 +72,10 @@ def set_label(path, color, on):
 
 
 def marks(path):
-    """{"tagged": select tag?, "ng": NG tag?} for a file in the local output tree; {} elsewhere (remote mirrors cannot be marked)."""
-    root = config.load()["_paths"]["output_root"]
+    """{"tagged": select tag?, "ng": NG tag?, "pair": final-pair tag?} for a file in the local output tree; {} elsewhere
+    (remote mirrors cannot be marked)."""
+    c = config.load(); root = c["_paths"]["output_root"]
     if not (path and path.startswith(root + "/")):
         return {}
-    have = labels(path); sel, ng = colors()
-    return {"tagged": sel in have, "ng": ng in have}
+    have = labels(path); sel, ng = colors(); pt = (c.get("pairs") or {}).get("tag") or "Green"
+    return {"tagged": sel in have, "ng": ng in have, "pair": pt in have}
