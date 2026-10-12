@@ -2,6 +2,8 @@
 
 ## 0.2.0 (2026-10-12)
 
+- New: sections can carry a `stage` and a `shot`; the Selects tab then filters by two chip rows (stage, shot) instead
+  of one chip per section, group headers count per stage and sections sort stage → shot (`collections[].stages`).
 - New: videos (.mp4 .mov .webm .mkv) are outputs too: listed in the Selects tab and on run cards (ffmpeg frame as
   the thumbnail, ▶ badge with the duration from ffprobe), played in the lightbox (hold-compare swaps to the source
   image), found by run.py and the watcher. Seedance nodes (ByteDance2*) are read for model, prompt, resolution,

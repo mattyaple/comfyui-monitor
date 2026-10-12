@@ -173,6 +173,8 @@
   .lnk { color:var(--muted); cursor:pointer; text-decoration:underline dotted; }
   .lnk:hover { color:var(--text); }
   #optSecs { display:inline-flex; align-items:center; gap:8px; } #optSecs[hidden] { display:none; }
+  .secrows { display:flex; flex-direction:column; gap:4px; } .secline { display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+  .secline .lab2 { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim, #8b95a3); width:38px; }
   #runFilt { display:flex; align-items:center; gap:8px; } #runFilt[hidden] { display:none; }
   #pickBar { position:fixed; top:calc(var(--hdr, 46px) + var(--bar, 0px) + 10px); left:50%; transform:translateX(-50%); z-index:6; display:flex; align-items:center; gap:10px; background:#1c2a3a; border:1px solid var(--accent); border-radius:999px; padding:6px 12px 6px 16px; box-shadow:0 8px 28px rgba(0,0,0,.55); font-size:12px; white-space:nowrap; }
   #pickBar[hidden] { display:none; }
@@ -257,7 +259,7 @@
   .colhead b { font-family:ui-monospace, Menlo, monospace; }
   .swatch { width:14px; height:14px; border-radius:4px; display:inline-block; border:1px solid rgba(255,255,255,.2); }
   input[type=color] { width:36px; height:24px; padding:0; border:1px solid var(--line); border-radius:6px; background:#0e1216; }
-  .secrow { display:grid; grid-template-columns:110px 130px 110px 46px 120px 28px; gap:6px; align-items:center; margin-bottom:4px; font-size:12px; }
+  .secrow { display:grid; grid-template-columns:90px 110px 150px 110px 64px 90px 46px 120px 28px; gap:6px; align-items:center; margin-bottom:4px; font-size:12px; }
   .secrow input[type=text], .secrow select { width:100%; }
   .errs { color:var(--err); font-size:12px; white-space:pre-wrap; margin:8px 0; }
   .okmsg { color:var(--ok); font-size:12px; margin:8px 0; }
@@ -832,7 +834,20 @@ const setClosed = st => { optClosed[optMode] = [...st]; save('optClosed', optClo
 function toggleSec(page, sec) { const k = page + '/' + sec, st = new Set(optClosedSec); st.has(k) ? st.delete(k) : st.add(k); optClosedSec = [...st]; save('optClosedSec', optClosedSec); renderOptions(); }
 const curCol = () => colById(optMode) || COLS()[0];
 const colSecs = col => (col && col.kind === 'shots' && col.sections && col.sections.length > 1) ? col.sections : [];
-const secShown = (col, sid) => { const m = optSecs[col.id] || {}; return m[sid] !== false; };
+let optStages = store('optStages', {}), optShots = store('optShots', {});   // {collection id: {stage id / shot: shown?}}
+const hasStages = col => !!(col && col.kind === 'shots' && (col.sections || []).some(s => s.stage || s.shot));
+const colStages = col => {   // the stage chips: configured stages in order, then unlisted ones found on sections, then "Other" for sections without a stage
+  const out = [...(col.stages || [])], seen = new Set(out.map(x => x.id));
+  for (const s of col.sections || []) if (s.stage && !seen.has(s.stage)) { seen.add(s.stage); out.push({id: s.stage, label: s.stage}); }
+  if ((col.sections || []).some(s => !s.stage)) out.push({id: '_other', label: 'Other', color: '#8b95a3'});
+  return out;
+};
+const colShots = col => { const out = []; for (const s of col.sections || []) if (s.shot && !out.includes(s.shot)) out.push(s.shot); return out; };
+const stageOf = s => (s && s.stage) || '_other';
+const secShown = (col, sid) => {
+  if (hasStages(col)) { const s = secOf(col, sid); if (!s) return true; const st = optStages[col.id] || {}, sh = optShots[col.id] || {};
+    return st[stageOf(s)] !== false && (!s.shot || sh[s.shot] !== false); }
+  const m = optSecs[col.id] || {}; return m[sid] !== false; };
 const secOf = (col, sid) => (col.sections || []).find(s => s.id === sid);
 const secLabel = im => { const col = colById(im.col); const s = col && secOf(col, im.sec); return s ? s.label : (im.sec || '').replace(/_white$/, ' (white)').replace(/_/g, ' '); };
 async function loadOptions(quiet) {
@@ -843,14 +858,33 @@ async function loadOptions(quiet) {
   $('#optVerSeg').hidden = !col.versioned;
   $('#optVerSeg').innerHTML = CFG._versions.map(v => `<a data-ver="${v}" class="${v === optVer ? 'on' : ''}" onclick="setOptVer('${v}')" title="${v === CFG._cur ? 'The current round: new renders land here' : 'An earlier round, kept for reference'}">${v}</a>`).join('');
   const secs = colSecs(col); $('#optSecs').hidden = !secs.length;
-  $('#optSecChips').innerHTML = secs.map(s => `<button class="chip sec${secShown(col, s.id) ? ' on' : ''}" data-sec="${esc(s.id)}" style="--c:${esc(s.color || col.color)}" title="Show or hide · ⌥-click to solo">${esc(s.label)}</button>`).join('');
-  document.querySelectorAll('#optSecChips .chip').forEach(c => c.addEventListener('click', e => {
-    const m = optSecs[col.id] = optSecs[col.id] || {}, sc = c.dataset.sec, ids = secs.map(s => s.id), solo = ids.every(k => (m[k] !== false) === (k === sc));
-    if (e.altKey) ids.forEach(k => m[k] = solo || k === sc); else m[sc] = !(m[sc] !== false);
-    save('optSecs', optSecs); loadOptions(true);
-  }));
+  if (hasStages(col)) {   // two rows: the stage (start frames / end frames / videos / other) and the shot
+    const st = optStages[col.id] || {}, sh = optShots[col.id] || {}, stages = colStages(col), shots = colShots(col);
+    const shotColor = shot => { const s = (col.sections || []).find(x => x.shot === shot); return (s && s.color) || col.color; };
+    $('#optSecs').querySelector('.lab').textContent = 'Show';
+    $('#optSecChips').innerHTML = `<div class="secrows"><div class="secline"><span class="lab2">stage</span>${stages.map(x => `<button class="chip sec${st[x.id] !== false ? ' on' : ''}" data-stage="${esc(x.id)}" style="--c:${esc(x.color || col.color)}" title="Show or hide · ⌥-click to solo">${esc(x.label)}</button>`).join('')}</div>`
+      + (shots.length ? `<div class="secline"><span class="lab2">shot</span>${shots.map(x => `<button class="chip sec${sh[x] !== false ? ' on' : ''}" data-shot="${esc(x)}" style="--c:${esc(shotColor(x))}" title="Show or hide · ⌥-click to solo">${esc(x)}</button>`).join('')}</div>` : '') + '</div>';
+    document.querySelectorAll('#optSecChips .chip[data-stage]').forEach(c => c.addEventListener('click', e => {
+      const m = optStages[col.id] = optStages[col.id] || {}, k0 = c.dataset.stage, ids = stages.map(x => x.id), solo = ids.every(k => (m[k] !== false) === (k === k0));
+      if (e.altKey) ids.forEach(k => m[k] = solo || k === k0); else m[k0] = !(m[k0] !== false);
+      save('optStages', optStages); loadOptions(true);
+    }));
+    document.querySelectorAll('#optSecChips .chip[data-shot]').forEach(c => c.addEventListener('click', e => {
+      const m = optShots[col.id] = optShots[col.id] || {}, k0 = c.dataset.shot, solo = shots.every(k => (m[k] !== false) === (k === k0));
+      if (e.altKey) shots.forEach(k => m[k] = solo || k === k0); else m[k0] = !(m[k0] !== false);
+      save('optShots', optShots); loadOptions(true);
+    }));
+  } else {
+    $('#optSecs').querySelector('.lab').textContent = 'Sections';
+    $('#optSecChips').innerHTML = secs.map(s => `<button class="chip sec${secShown(col, s.id) ? ' on' : ''}" data-sec="${esc(s.id)}" style="--c:${esc(s.color || col.color)}" title="Show or hide · ⌥-click to solo">${esc(s.label)}</button>`).join('');
+    document.querySelectorAll('#optSecChips .chip').forEach(c => c.addEventListener('click', e => {
+      const m = optSecs[col.id] = optSecs[col.id] || {}, sc = c.dataset.sec, ids = secs.map(s => s.id), solo = ids.every(k => (m[k] !== false) === (k === sc));
+      if (e.altKey) ids.forEach(k => m[k] = solo || k === sc); else m[sc] = !(m[sc] !== false);
+      save('optSecs', optSecs); loadOptions(true);
+    }));
+  }
   const sel = col.select || {}, tagName = (CFG.selects.tags || {}).select || 'Yellow';
-  $('#optHelp').innerHTML = `${col.versioned && optVer !== CFG._cur ? `<b style="color:var(--warn)">${optVer} is frozen: new renders go to ${CFG._cur}</b> · ` : ''}★ / <b>S</b> select → ${sel.mode === 'copy' ? 'copied to ' + esc(sel.dest || 'the select folder') : tagName + ' Finder tag (nothing is copied)'} · ✕ / <b>X</b> mark NG (${esc((CFG.selects.tags || {}).ng || 'Red')} tag) · folder button: show in Finder${secs.length ? ' · ⌥-click a section to solo it' : ''} · ⇧ / ⌘-click to pick several`;
+  $('#optHelp').innerHTML = `${col.versioned && optVer !== CFG._cur ? `<b style="color:var(--warn)">${optVer} is frozen: new renders go to ${CFG._cur}</b> · ` : ''}★ / <b>S</b> select → ${sel.mode === 'copy' ? 'copied to ' + esc(sel.dest || 'the select folder') : tagName + ' Finder tag (nothing is copied)'} · ✕ / <b>X</b> mark NG (${esc((CFG.selects.tags || {}).ng || 'Red')} tag) · folder button: show in Finder${secs.length ? ' · ⌥-click a chip to solo it' : ''} · ⇧ / ⌘-click to pick several`;
   try { opts = await fetch(`/api/collection?id=${encodeURIComponent(optMode)}&v=${encodeURIComponent(optVer || '')}`).then(r => r.json()); } catch (e) { toast('Could not load: ' + e, 6000); return; }
   if (opts.error) { toast(opts.error, 6000); opts = {groups: []}; }
   optStale = false; renderOptions();
@@ -879,7 +913,8 @@ const tileHtml = (im, i) => { const sel = isSelIm(im), bad = isNg(im), ar = im.w
 let optPend = {};
 function groupHead(page, g) {
   const col = curCol(), nSel = g.items.filter(isSelIm).length, nNg = g.items.filter(isNg).length, nRun = (optPend[page] || []).length, secs = colSecs(col);
-  const comp = secs.length ? secs.map(s => { const n = g.items.filter(x => x.sec === s.id).length; return n ? `<span class="pill">${n} ${esc(s.label.toLowerCase())}</span>` : ''; }).join('') : `<span class="pill">${plural(g.items.length, 'image')}</span>`;
+  const comp = hasStages(col) ? colStages(col).map(st => { const n = g.items.filter(x => stageOf(secOf(col, x.sec)) === st.id).length; return n ? `<span class="pill" style="border-color:${esc(st.color || col.color)}">${n} ${esc(st.label.toLowerCase())}</span>` : ''; }).join('')
+             : secs.length ? secs.map(s => { const n = g.items.filter(x => x.sec === s.id).length; return n ? `<span class="pill">${n} ${esc(s.label.toLowerCase())}</span>` : ''; }).join('') : `<span class="pill">${plural(g.items.length, 'image')}</span>`;
   const dest = g.dest && (g.dest[''] || g.dest.option || Object.values(g.dest)[0]);
   return `<span class="chev">▾</span><span class="gname" title="${esc(page)}">${esc(page)}</span>${comp}`
        + (nSel ? `<span class="pill sel" title="${plural(nSel, 'select')}">★ ${nSel}</span>` : '') + (nNg ? `<span class="pill ngp" title="${nNg} marked NG">✕ ${nNg} NG</span>` : '')
@@ -914,7 +949,10 @@ function renderOptions() {
     if (!key) continue; if (!groups.has(key)) groups.set(key, {items: [], dest: null}); (optPend[key] = optPend[key] || []).push(p);
   }
   const items = []; let html = '';
-  const secIds = colSecs(col).map(s => s.id), rank = s => { const i = secIds.indexOf(s); return i < 0 ? 999 : (col.sections[i].sub ? 0 : 1) * 100 + i; };
+  const secIds = colSecs(col).map(s => s.id), stIds = colStages(col).map(x => x.id), shIds = colShots(col);
+  const rank = s => { const i = secIds.indexOf(s); if (i < 0) return 99999;
+    if (hasStages(col)) { const sec = col.sections[i]; const a = stIds.indexOf(stageOf(sec)), b = sec.shot ? shIds.indexOf(sec.shot) : 999; return (a < 0 ? 99 : a) * 10000 + (b < 0 ? 999 : b) * 10 + (i % 10); }
+    return (col.sections[i].sub ? 0 : 1) * 100 + i; };
   for (const [page, g] of groups) {
     const pend = optPend[page] || [], fresh = pend.filter(p => !g.items.some(x => x.run === p.r.id));
     if (!g.items.length && !pend.length) continue;
@@ -1005,7 +1043,7 @@ async function optMark(e, i, what) {
   if (sh) sh.outerHTML = subHead(im.sec, optVisible.filter(x => x.group === im.group && x.sec === im.sec), false);
   return false;
 }
-function optReset() { optSelOnly = false; optHideNg = false; optSecs = {}; save('optSelOnly', false); save('optHideNg', false); save('optSecs', optSecs); loadOptions(true); render(); }
+function optReset() { optSelOnly = false; optHideNg = false; optSecs = {}; optStages = {}; optShots = {}; save('optSelOnly', false); save('optHideNg', false); save('optSecs', optSecs); save('optStages', optStages); save('optShots', optShots); loadOptions(true); render(); }
 function toggleGroup(page) { const st = closedSet(); st.has(page) ? st.delete(page) : st.add(page); setClosed(st); renderOptions(); }
 $('#optCollapseAll').addEventListener('click', () => { setClosed(new Set(opts ? opts.groups.map(p => p.group) : [])); renderOptions(); });
 $('#optExpandAll').addEventListener('click', () => { setClosed(new Set()); optClosedSec = []; save('optClosedSec', []); renderOptions(); });
@@ -1217,7 +1255,7 @@ function colHtml(c, i) {
   const sel = c.select || {}, shots = c.kind === 'shots';
   const txt = (k, label, hint, w) => `<span class="lab">${label}</span><div><input type="text" data-c="${i}" data-k="${k}" value="${esc(getP(c, k) ?? '')}"${w ? ` style="max-width:${w}px"` : ''}>${hint ? ` <span class="small">${esc(hint)}</span>` : ''}</div>`;
   const segm = (k, vals) => `<span class="vtoggle">${vals.map(([v, l]) => `<a data-c="${i}" data-k="${k}" data-v="${v}" class="${getP(c, k) === v ? 'on' : ''}">${l}</a>`).join('')}</span>`;
-  const secs = (c.sections || []).map((s, j) => `<div class="secrow"><input type="text" data-c="${i}" data-s="${j}" data-k="id" value="${esc(s.id)}" placeholder="id"><input type="text" data-c="${i}" data-s="${j}" data-k="label" value="${esc(s.label || '')}" placeholder="Label"><input type="text" data-c="${i}" data-s="${j}" data-k="sub" value="${esc(s.sub || '')}" placeholder="subfolder ('' = base)"><input type="text" data-c="${i}" data-s="${j}" data-k="file_regex" value="${esc(s.file_regex || '')}" placeholder="file regex (shares a folder)" title="Optional: a file-name pattern (without extension); sections sharing a subfolder are told apart by it, the one without a pattern takes the rest"><input type="color" data-c="${i}" data-s="${j}" data-k="color" value="${esc(s.color || c.color || '#8b95a3')}"><select data-c="${i}" data-s="${j}" data-k="compare"><option value="">compare: —</option><option value="source" ${s.compare === 'source' ? 'selected' : ''}>compare: source image</option><option value="hash" ${s.compare === 'hash' ? 'selected' : ''}>compare: by content</option></select><button class="ico" title="Remove section" onclick="colSec(${i},${j},'del')">✕</button></div>`).join('');
+  const secs = (c.sections || []).map((s, j) => `<div class="secrow"><input type="text" data-c="${i}" data-s="${j}" data-k="id" value="${esc(s.id)}" placeholder="id"><input type="text" data-c="${i}" data-s="${j}" data-k="label" value="${esc(s.label || '')}" placeholder="Label"><input type="text" data-c="${i}" data-s="${j}" data-k="sub" value="${esc(s.sub || '')}" placeholder="subfolder ('' = base)"><input type="text" data-c="${i}" data-s="${j}" data-k="file_regex" value="${esc(s.file_regex || '')}" placeholder="file regex (shares a folder)" title="Optional: a file-name pattern (without extension); sections sharing a subfolder are told apart by it, the one without a pattern takes the rest"><input type="text" data-c="${i}" data-s="${j}" data-k="stage" value="${esc(s.stage || '')}" placeholder="stage" title="Optional stage id (start, end, video): the Selects tab filters by stage and shot instead of one chip per section; stages are named in the collection's 'stages' list"><input type="text" data-c="${i}" data-s="${j}" data-k="shot" value="${esc(s.shot || '')}" placeholder="shot" title="Optional shot code this section belongs to (DET-HEEL): one shot chip covers its start, end and video sections"><input type="color" data-c="${i}" data-s="${j}" data-k="color" value="${esc(s.color || c.color || '#8b95a3')}"><select data-c="${i}" data-s="${j}" data-k="compare"><option value="">compare: —</option><option value="source" ${s.compare === 'source' ? 'selected' : ''}>compare: source image</option><option value="hash" ${s.compare === 'hash' ? 'selected' : ''}>compare: by content</option></select><button class="ico" title="Remove section" onclick="colSec(${i},${j},'del')">✕</button></div>`).join('');
   return `<div class="colcard"><div class="colhead"><span class="swatch" style="background:${esc(c.color || '#8b95a3')}"></span><b>${esc(c.id)}</b><span class="small">${esc(c.label)} · ${shots ? 'groups with sections' : 'plain folders'}</span><span class="spacer"></span>
       <button class="btn quiet" onclick="colMove(${i},-1)" ${i === 0 ? 'disabled' : ''}>↑</button><button class="btn quiet" onclick="colMove(${i},1)" ${i === draft.collections.length - 1 ? 'disabled' : ''}>↓</button><button class="btn danger" onclick="colDel(${i})">Remove</button></div>
     <div class="form">
