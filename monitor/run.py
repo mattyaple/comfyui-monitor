@@ -396,7 +396,9 @@ def graph_details(g):
         if gens:
             d["batch"] = sum(n["inputs"].get("n", n["inputs"].get("batch_size", n["inputs"].get("model.max_images", 1))) or 1 for n in gens)
     if engine in ("api", "open_edit"):
-        d["refs"] = list(dict.fromkeys(d["refs"] + [n["inputs"]["image"] for n in g.values() if n.get("class_type") == "LoadImage" and isinstance(n.get("inputs", {}).get("image"), str)]))
+        used = {str(v[0]) for n in g.values() for v in (n.get("inputs") or {}).values() if isinstance(v, list) and v}   # nodes something reads from
+        d["refs"] = list(dict.fromkeys(d["refs"] + [n["inputs"]["image"] for nid, n in g.items() if n.get("class_type") == "LoadImage"
+                                                    and str(nid) in used and isinstance(n.get("inputs", {}).get("image"), str)]))   # a dangling LoadImage is not a reference
     if engine == "open_edit" and not d["prompt"]:
         prompts = [n.get("inputs", {}).get("prompt") for n in g.values() if "qwen" in str(n.get("class_type", "")).lower()]
         prompts = [p for p in prompts if isinstance(p, str) and p != d.get("negative")]
