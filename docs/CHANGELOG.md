@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.3 (2026-10-14)
+
+- New: `pairs.max_per_shot` (1 by default, the old behaviour: a new final pair replaces the shot's previous one). Set it
+  to 2 or more and a shot keeps alternates: each end frame marked adds a pair until the limit, the first named by
+  `pairs.names`, the others by `pairs.alt_names` (`{shot}_A_{n}`, `{shot}_B_{n}`); unmarking an end frame removes only
+  its own pair and the start frame keeps its tag while another pair still uses it. `_pairs.json` keys alternates
+  `SHOT#n`; `/api/pair` answers `slot`, `slots` and `max`, and the toast says "Final pair 2 of 3".
+
+## 0.3.2 (2026-10-14)
+
+- New: `selects.copy_tags` (off by default). Copies of selects in a copy-mode destination carry one Finder label: the
+  select color, or the final-pair tag instead when the original is in a final pair, so a select folder reads at a
+  glance which selects made it into a pair. Before, the copies carried no tags at all (macOS copies drop them).
+
+## 0.3.1 (2026-10-13)
+
+- New: `collections[].auto_sections`, section templates (`sub` ending in `/*`). A folder under such a parent that no
+  configured section claims (a custom shot code written by a workflow) becomes a section by itself: listed in the
+  Selects tab with its own shot chip, classified by run.py and the watcher, usable for selects and final pairs. Before,
+  images saved into an unconfigured folder were on disk but invisible in the monitor.
+
 ## 0.3.0 (2026-10-12)
 
 - Marks (select / NG / final pair) are stored in a `_marks.json` sidecar beside the files (`selects.marks`, default

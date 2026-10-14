@@ -23,7 +23,8 @@ GET
 POST
   /api/select?src=&srv=&col=&group=&sec=&v=&on=1|0   mark a select (tag mode: Finder's yellow tag; copy mode: also copied to the collection's dest)
   /api/ng?src=&srv=&on=1|0                           mark NG (Finder's red tag; exclusive with select)
-  /api/pair?src=&srv=&on=1|0                         final pair: copy the image + its source image into pairs.dest, tag both (pairs in project.json)
+  /api/pair?src=&srv=&on=1|0                         final pair: copy the image + its source image into pairs.dest, tag both (pairs in project.json;
+                                                     pairs.max_per_shot above 1 keeps alternates, named by pairs.alt_names)
   /api/reveal?src=&srv=                              show the file in Finder
   /api/reroll?id=&dry=0|1                            re-run a run's graph with a new seed (retargeted to the current version)
   /api/run/remove?id=                                move a run record into runs/_removed/
@@ -214,6 +215,45 @@ set_mark = marksmod.set                     # set_mark(path, "select" | "ng" | "
 
 def tag_colors():
     return tags.colors()
+
+
+def tag_select_copy(orig):
+    """selects.copy_tags: the copy of a select in its copy-mode destination carries one Finder label, the pair tag when the
+    original is part of a final pair, the select color otherwise (the original keeps both). No-op elsewhere."""
+    c = cfg()
+    if not (tags.IS_MAC and (c.get("selects") or {}).get("copy_tags")) or not orig or not orig.startswith(local_root() + "/"):
+        return
+    hit = config.classify_path(c, config.relp(orig, local_root()))
+    if not hit or ((hit[0].get("select") or {}).get("mode") != "copy"):
+        return
+    dest = config.select_dest(c, *hit)
+    q = os.path.join(dest, os.path.basename(orig)) if dest else None
+    if not q or not os.path.isfile(q):
+        return
+    m = marks(orig); sel, _ = tag_colors(); pt = (c.get("pairs") or {}).get("tag") or "Green"
+    want, other = (pt, sel) if m.get("pair") else (sel, pt)
+    have = tags.labels(q)
+    if other in have:
+        tags.set_label(q, other, False, exclusive=False)
+    if want not in have:
+        tags.set_label(q, want, True, exclusive=False)
+
+
+def sync_select_copy_tags():
+    """Backfill selects.copy_tags over every select recorded in a _marks.json sidecar under the output root."""
+    if not (tags.IS_MAC and (cfg().get("selects") or {}).get("copy_tags")):
+        return
+    n = 0
+    for d, dirs, files in os.walk(local_root()):
+        dirs[:] = [x for x in dirs if not x.startswith((".", "Z_"))]
+        if "_marks.json" in files:
+            for name, e in marksmod.read_sidecar(d).items():
+                if e.get("select"):
+                    try:
+                        tag_select_copy(os.path.join(d, name)); n += 1
+                    except Exception as ex:
+                        print(f"copy tags: {name}: {ex}", file=sys.stderr)
+    print(f"copy tags: checked {n} select copies")
 
 
 # ---- run records -------------------------------------------------------------------------------------------------------
@@ -630,6 +670,8 @@ def mark_select(src, srv, col_id, group, sid, ver, on):
         return {"ok": False, "error": "only files in the local output folder can be tagged (this one is on a remote mirror)"}
     for q in {x for x in (p, lp) if x and x.startswith(local_root() + "/")}:
         set_mark(q, "select", on)
+    if on and mode == "copy":
+        tag_select_copy(lp or p)
     out = {"ok": True, "file": os.path.basename(p), "mode": mode, **marks(lp or p)}
     out["sel"] = on
     if dest:
@@ -665,8 +707,44 @@ def pair_source_of(rel, col, group, ver):
     return (None, q) if os.path.isfile(q) else (None, None)
 
 
+def pair_key(shot, n):
+    """Index key of a shot's pair in slot n: the shot itself for slot 1 (the original format), `SHOT#n` for alternates."""
+    return shot if n == 1 else f"{shot}#{n}"
+
+
+def pair_slots(idx, shot):
+    """{slot number: index entry} of every pair a shot has."""
+    out = {}
+    if idx.get(shot):
+        out[1] = idx[shot]
+    for k, v in idx.items():
+        n = k[len(shot) + 1:] if k.startswith(shot + "#") else ""
+        if n.isdigit() and int(n) > 1:
+            out[int(n)] = v
+    return out
+
+
+def retire_copies(dest, files, how):
+    """Move a pair's copies to Z_OLD (numbered when the name is taken), delete them, or keep them."""
+    for f in files:
+        fp = os.path.join(dest, f)
+        if not os.path.isfile(fp) or how == "keep":
+            continue
+        if how == "delete":
+            os.remove(fp); continue
+        os.makedirs(os.path.join(dest, "Z_OLD"), exist_ok=True)
+        stem, ext = os.path.splitext(f); k, target = 0, os.path.join(dest, "Z_OLD", f)
+        while os.path.exists(target):
+            k += 1; target = os.path.join(dest, "Z_OLD", f"{stem}_{k}{ext}")
+        shutil.move(fp, target)
+
+
 def mark_pair(src, srv, on):
-    """Mark an image as a final pair with its source image: both are copied into pairs.dest under pairs.names and tagged."""
+    """Mark an image as a final pair with its source image: both are copied into pairs.dest and tagged.
+
+    pairs.max_per_shot 1 (default): a shot has one pair, named by pairs.names; a new one replaces it (copies to Z_OLD).
+    Above 1: a shot keeps up to that many pairs; the first takes pairs.names, the others pairs.alt_names with {n} = the
+    slot number (2, 3...). Unmarking an image removes the pair it is in; the other pairs of the shot stay as they are."""
     c = cfg(); pr = c.get("pairs") or {}
     if not pr.get("enabled"):
         return {"ok": False, "error": "final pairs are not enabled (Settings → Final pairs)"}
@@ -682,11 +760,18 @@ def mark_pair(src, srv, on):
         return {"ok": False, "error": "pairs.dest is not set"}
     s = config.section(col, sid) if sid else None
     shot = os.path.basename((s or {}).get("sub") or "") or group
-    names = pr.get("names") or ["{shot}_A", "{shot}_B"]
-    a_name, b_name = (config.expand(n, {**c["_vars"], "group": group, "section": sid or "", "shot": shot}) for n in names[:2])
+    max_n = max(1, int(pr.get("max_per_shot") or 1))
+    vars_ = {**c["_vars"], "group": group, "section": sid or "", "shot": shot}
+
+    def names_for(n):
+        pats = (pr.get("names") or ["{shot}_A", "{shot}_B"]) if n == 1 else (pr.get("alt_names") or ["{shot}_A_{n}", "{shot}_B_{n}"])
+        return tuple(config.expand(x, {**vars_, "n": n}) for x in pats[:2])
+
     src_rel, src_abs = pair_source_of(rel, col, group, ver)
-    tag = pr.get("tag") or "Green"
-    idx = pairs_index(dest); cur = idx.get(shot) or {}
+    idx = pairs_index(dest); slots = pair_slots(idx, shot)
+    mine = next((n for n, e in slots.items() if e.get("image") == rel), None)   # the slot this image already fills
+    how = pr.get("unpair", "z_old")
+    touched = {p, os.path.join(local_root(), src_rel) if src_rel else None}
     if on:
         if not src_abs:
             return {"ok": False, "error": "no source image is recorded for this run (its first input), so there is nothing to pair it with"}
@@ -695,46 +780,66 @@ def mark_pair(src, srv, on):
             probe = os.path.dirname(probe)
         if not probe or probe in ("/", os.path.expanduser("~")):
             return {"ok": False, "error": f"pair destination not reachable: {dest} (is the volume mounted?)"}
-        os.makedirs(dest, exist_ok=True)
-        # a new pair for this shot replaces the previous one: its copies go to Z_OLD, its originals lose the tag
-        for key in ("image", "source"):
-            old_rel = cur.get(key)
-            if old_rel and old_rel != (rel if key == "image" else src_rel):
-                op = os.path.join(local_root(), old_rel)
-                if os.path.isfile(op):
-                    set_mark(op, "pair", False)
-        for f in os.listdir(dest) if os.path.isdir(dest) else []:
-            stem = os.path.splitext(f)[0]
-            if stem in (a_name, b_name) and f.lower().endswith(MEDIA_EXT):
-                os.makedirs(os.path.join(dest, "Z_OLD"), exist_ok=True)
-                k, target = 0, os.path.join(dest, "Z_OLD", f)
-                while os.path.exists(target):
-                    k += 1; target = os.path.join(dest, "Z_OLD", f"{stem}_{k}{os.path.splitext(f)[1]}")
-                shutil.move(os.path.join(dest, f), target)
-        a_file = a_name + os.path.splitext(src_abs)[1]; b_file = b_name + os.path.splitext(p)[1]
-        shutil.copy2(src_abs, os.path.join(dest, a_file)); shutil.copy2(p, os.path.join(dest, b_file))
-        idx[shot] = {"image": rel, "source": src_rel or src_abs, "copies": [a_file, b_file], "when": datetime.now().isoformat(timespec="seconds")}
-        write_pairs_index(dest, idx)
+        if mine is not None:
+            slot = mine                                   # already in a pair: nothing to copy
+        elif max_n == 1:
+            slot = 1
+            cur = slots.get(1) or {}
+            # the new pair replaces the previous one: its copies go to Z_OLD, its originals lose the tag
+            for key in ("image", "source"):
+                old_rel = cur.get(key)
+                if old_rel and old_rel != (rel if key == "image" else src_rel) and not os.path.isabs(old_rel):
+                    op = os.path.join(local_root(), old_rel)
+                    if os.path.isfile(op):
+                        set_mark(op, "pair", False); touched.add(op)
+            a_name, b_name = names_for(1)
+            retire_copies(dest, [f for f in (os.listdir(dest) if os.path.isdir(dest) else [])
+                                 if os.path.splitext(f)[0] in (a_name, b_name) and f.lower().endswith(MEDIA_EXT)], "z_old")
+            idx.pop(shot, None)
+        else:
+            slot = next((n for n in range(1, max_n + 1) if n not in slots), None)
+            if slot is None:
+                return {"ok": False, "error": f"{shot} already has {max_n} final pairs; unmark one of them first (P on its end frame)"}
+        if mine is None:
+            os.makedirs(dest, exist_ok=True)
+            a_name, b_name = names_for(slot)
+            a_file = a_name + os.path.splitext(src_abs)[1]; b_file = b_name + os.path.splitext(p)[1]
+            shutil.copy2(src_abs, os.path.join(dest, a_file)); shutil.copy2(p, os.path.join(dest, b_file))
+            entry = {"image": rel, "source": src_rel or src_abs, "copies": [a_file, b_file], "when": datetime.now().isoformat(timespec="seconds")}
+            if slot > 1:
+                entry["slot"] = slot
+            idx[pair_key(shot, slot)] = entry
+            write_pairs_index(dest, idx)
         set_mark(p, "pair", True)
         if src_rel:
             set_mark(os.path.join(local_root(), src_rel), "pair", True)
+        copies = list(idx[pair_key(shot, slot)].get("copies") or [])
     else:
-        how = pr.get("unpair", "z_old")
-        for f in cur.get("copies") or []:
-            fp = os.path.join(dest, f)
-            if os.path.isfile(fp):
-                if how == "z_old":
-                    os.makedirs(os.path.join(dest, "Z_OLD"), exist_ok=True); shutil.move(fp, os.path.join(dest, "Z_OLD", f))
-                elif how == "delete":
-                    os.remove(fp)
-        idx.pop(shot, None); write_pairs_index(dest, idx)
+        if mine is None and max_n == 1 and slots.get(1):
+            mine = 1                                      # the old single-pair behaviour: unmarking clears the shot's pair
+        if mine is None:
+            return {"ok": False, "error": "this image is not in a final pair"}
+        slot = mine; cur = idx.pop(pair_key(shot, slot), None) or {}
+        retire_copies(dest, cur.get("copies") or [], how)
+        write_pairs_index(dest, idx)
         set_mark(p, "pair", False)
-        for q in (os.path.join(local_root(), cur["source"]) if cur.get("source") and not os.path.isabs(cur["source"]) else cur.get("source"), os.path.join(local_root(), src_rel) if src_rel else None):
-            if q and os.path.isfile(q) and q.startswith(local_root() + "/"):
-                set_mark(q, "pair", False)
-    out = {"ok": True, "pair": on, "shot": shot, "file": os.path.basename(p), "dest": config.relp(dest, c["_root"]) if dest.startswith(c["_root"]) else dest,
-           "source": os.path.basename(src_abs) if src_abs else None, "source_src": ("out:" + src_rel) if src_rel else None, "copies": [a_name, b_name] if on else []}
-    return out
+        # the source keeps its tag while another pair of the shot still uses it
+        still = {e.get("source") for n, e in pair_slots(idx, shot).items()}
+        for q in (cur.get("source"), src_rel):
+            if q and not os.path.isabs(q) and q not in still:
+                qa = os.path.join(local_root(), q)
+                if os.path.isfile(qa):
+                    set_mark(qa, "pair", False); touched.add(qa)
+        if cur.get("image") and not os.path.isabs(cur["image"]):
+            touched.add(os.path.join(local_root(), cur["image"]))
+        copies = []
+    for q in touched:
+        if q and os.path.isfile(q):
+            tag_select_copy(q)
+    return {"ok": True, "pair": on, "shot": shot, "slot": slot, "slots": sorted(pair_slots(idx, shot)), "max": max_n, "file": os.path.basename(p),
+            "dest": config.relp(dest, c["_root"]) if dest.startswith(c["_root"]) else dest,
+            "source": os.path.basename(src_abs) if src_abs else None, "source_src": ("out:" + src_rel) if src_rel else None,
+            "copies": [os.path.splitext(f)[0] for f in copies]}
 
 
 def mark_ng(src, srv, on):
@@ -1005,4 +1110,5 @@ if __name__ == "__main__":
     print(f"{c['project'].get('title') or 'monitor'}: http://127.0.0.1:{port}")
     if c["runs"].get("watch_ui", True):
         import watch; watch.start()
+    threading.Thread(target=sync_select_copy_tags, daemon=True).start()
     ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()

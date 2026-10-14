@@ -76,6 +76,7 @@ The list that drives the Selects tab (one segment each), the classification of r
 | `file_name` | (shots) name pattern for collected base-section files, numbered per group and version |
 | `stages` | (shots, optional) `[{"id", "label", "color"}]`: when sections carry a `stage` (and a `shot`), the Selects tab filters by two chip rows, stage (start frames / end frames / videos / other) and shot, instead of one chip per section; group headers count per stage and sections are ordered stage → shot |
 | `sections` | (shots) exactly one with `sub: ""` (the base section) plus any sub-folders. Optional per section: `stage` (a `stages` id) and `shot` (the shot code the section belongs to), see `stages`. Several sections may share one `sub` when all but one carry a `file_regex` (matched against the file name without extension): the matching section takes the file, the one without a pattern takes the rest (start frames `HERO-PAIR_001` and end frames `HERO-PAIR_B_001` in one folder). `compare`: `source` = the first input of a run in this section is the group image it was made from (hold-to-compare shows it); `hash` = a run whose input matches a file in this section by content shows that file (plates) |
+| `auto_sections` | (shots, optional) section templates for folders that are not known in advance, such as a custom shot code a workflow invents. Each entry is a section whose `sub` ends in `/*` and whose `id` contains `{name}`: every subfolder of that parent, in any group, that no entry of `sections` claims becomes a section of its own, with `{name}` replaced by the folder name in `id` (slugged, prefixed `auto_`), `label` and `shot`. Give one template per kind of file in the folder, exactly as for a configured shot: `{"id": "{name}", "label": "{name}", "sub": "Outputs/*", "stage": "start", "shot": "{name}"}`, a second one with a `file_regex` for end frames, a third on the video parent. The folders are looked up again every few seconds, so a new one shows in the Selects tab (with its own shot chip, selects, compare and final pairs) without a restart or a config edit. Auto sections carry `"auto": true` in `/api/config` and are never written to `project.json`; hidden folders and those starting with `_` or `Z_` are skipped |
 | `depth` | (folders) 1 = subfolders are groups; 2 = one nested level too (`env_Classroom/front`); 0 = every folder with images, newest first (tests) |
 | `section_from_name` | (folders) regex with one group, applied to a file name without its counter; the capture is the file's section (`_ref_(.+)$` → `face`, `turn_3q`); no match = `other`. `section_order`: prefixes in display order |
 | `select.mode` | `tag`: Finder's select tag on the file, nothing copied. `copy`: also copied into `dest` |
@@ -107,12 +108,22 @@ with them, so on a shared volume every machine (Mac or Windows) sees the same ma
 elsewhere. A file that has a tag but no sidecar entry still reads from the tag; `tools/marks_migrate.py --write`
 converts a whole tree. `tools/selects_index.py` reads both stores.
 
+`copy_tags` (false): for collections whose selects are copied (`select.mode: copy`), give each copy in the destination
+one Finder label (macOS): the select color, or the final-pair tag instead when its original is part of a final pair. The
+originals keep both labels. Selecting, pairing, unpairing and replacing a pair update the copies; the server also
+re-checks every select recorded in a sidecar when it starts (a backfill for copies made before the switch was on).
+
 ## pairs
 
 A "final pair" is an image together with the source image it was made from (the first input of the run that produced it:
 an end frame and its start frame). Marking one (the lightbox's ◆ button or P) copies both into `dest` under `names` and
 sets the `tag` Finder label on both originals, beside the select tag; `_pairs.json` in the destination remembers which
-files form the pair. A new pair for the same `{shot}` replaces the previous one (its copies go to `Z_OLD/`).
+files form the pair. With `max_per_shot` at 1 a new pair for the same `{shot}` replaces the previous one (its copies go
+to `Z_OLD/`); above 1 a shot keeps that many pairs: the first is named by `names`, the others by `alt_names` with `{n}`
+the pair's number (2, 3…; the lowest free number is taken), `_pairs.json` keys them `SHOT` and `SHOT#n`, and unmarking
+an end frame removes only the pair it is in (its start frame keeps the tag while another pair still uses it). The
+video workflow's shot code comes from the start frame's name, and a trailing `_n` is stripped like a counter, so an
+alternate pair's `DET-HEEL_A_2.png` still saves its video under `DET-HEEL`.
 
 | key | default | meaning |
 |---|---|---|
@@ -121,6 +132,8 @@ files form the pair. A new pair for the same `{shot}` replaces the previous one 
 | `names` | `["{shot}_A", "{shot}_B"]` | file names of the copies (source, image); the extension is kept |
 | `tag` | Green | Finder label on both originals |
 | `unpair` | z_old | what unmarking does with the copies: `z_old`, `delete`, `keep` |
+| `max_per_shot` | 1 | pairs a shot may have: 1 replaces, 2 or more keeps alternates |
+| `alt_names` | `["{shot}_A_{n}", "{shot}_B_{n}"]` | file names of the copies of the 2nd, 3rd… pair (`{n}` = its number) |
 
 ## naming
 

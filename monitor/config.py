@@ -17,7 +17,7 @@ Placeholders accepted in paths and patterns:
 `fmt(pattern, **vars)` substitutes them and drops the empty path segments that an unused {version} leaves behind.
 The config file is re-read whenever its modification time changes, so the Settings tab's edits apply at once.
 """
-import copy, json, os, re, sys
+import copy, json, os, re, sys, time
 
 # The monitor builds and compares paths with forward slashes (relative output paths, "startswith(root + '/')", the
 # collection regexes). Python accepts "/" in Windows paths, so on Windows the os.path helpers are wrapped to return "/".
@@ -104,13 +104,16 @@ DEFAULTS = {
         "ui_title_node": "Run Title",  # a string node with this title in the UI graph names the run on its card
     },
     "selects": {"tags": {"select": "Yellow", "ng": "Red"},
-                "marks": "auto"},   # where marks live: "sidecar" (_marks.json beside the files, shared), "tags" (Finder, macOS), "both"; auto = both on a Mac, sidecar elsewhere
+                "marks": "auto",    # where marks live: "sidecar" (_marks.json beside the files, shared), "tags" (Finder, macOS), "both"; auto = both on a Mac, sidecar elsewhere
+                "copy_tags": False},  # copy-mode selects (macOS): tag each copy in the destination with ONE label, the select color, or the final-pair tag instead when the original is in a final pair
     "pairs": {                # "final pair": an image plus the source image it was made from (its run's first input), copied together
         "enabled": False,
         "dest": "{selects_root}/{group}/Final",   # folder pattern: {selects_root} {output_root} {group} {section} {shot} (the section folder's last part)
         "names": ["{shot}_A", "{shot}_B"],        # file names of the copies (source, image); the extension is kept
         "tag": "Green",                           # Finder label set on both originals (kept alongside the select tag)
         "unpair": "z_old",                        # what unmarking does with the copies: z_old | delete | keep
+        "max_per_shot": 1,                        # 1: a new pair for a shot replaces the previous one; n > 1: up to n pairs per shot (alternates)
+        "alt_names": ["{shot}_A_{n}", "{shot}_B_{n}"],   # file names of the 2nd, 3rd... pair's copies ({n} = the pair's slot number)
     },
     "export": {
         "enabled": True,
@@ -185,6 +188,80 @@ def version_number(name):
     return int(m.group(0)) if m else None
 
 
+AUTO_SCAN_SECONDS = 8   # how often load() looks for new folders when a collection has auto_sections
+
+
+def _slug(name):
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "x"
+
+
+def _auto_parent(tpl):
+    """The folder (relative to a group) whose subfolders an auto_sections template turns into sections."""
+    sub = tpl.get("sub") or ""
+    return sub[:-2] if sub.endswith("/*") else None
+
+
+def _auto_section(tpl, name):
+    """The concrete section an auto_sections template gives for the folder `name` ({name} filled in; the id is slugged)."""
+    s = {k: (v.replace("{name}", name) if isinstance(v, str) else copy.deepcopy(v)) for k, v in tpl.items()}
+    s["id"] = (tpl.get("id") or "{name}").replace("{name}", "auto_" + _slug(name))
+    s["sub"] = _auto_parent(tpl) + "/" + name
+    s.setdefault("label", name)
+    s["auto"] = True
+    return s
+
+
+def _add_auto(col, name, parent):
+    """Append the sections for folder `name` under `parent` (every template of that parent); True when one was added."""
+    ids = {s["id"] for s in col["sections"]}; added = False
+    for tpl in col.get("auto_sections") or []:
+        if _auto_parent(tpl) != parent:
+            continue
+        s = _auto_section(tpl, name)
+        if s["id"] not in ids:
+            col["sections"].append(s); ids.add(s["id"]); added = True
+    if added:
+        col.pop("_rx", None)
+    return added
+
+
+def _auto_found(cfg, col):
+    """[(parent, folder name)] on disk for the collection's auto_sections: subfolders of a template's parent, in any group
+    (and version), that no configured section claims. Hidden, "_" and "Z_" folders are skipped."""
+    parents = list(dict.fromkeys(p for p in map(_auto_parent, col.get("auto_sections") or []) if p is not None))
+    if not parents:
+        return []
+    taken = {s.get("sub") for s in col.get("sections") or [] if not s.get("auto")}
+    grx = re.compile(col.get("group_regex") or ".*")
+    out = set()
+    for ver in (cfg["_versions"] if col.get("versioned") else [""]):
+        root = col_dir(cfg, col, ver)
+        try:
+            groups = [e.name for e in os.scandir(root) if e.is_dir() and grx.match(e.name)]
+        except OSError:
+            continue
+        for g in groups:
+            for parent in parents:
+                try:
+                    out.update((parent, e.name) for e in os.scandir(os.path.join(root, g, parent))
+                               if e.is_dir() and not e.name.startswith((".", "_", "Z_")) and f"{parent}/{e.name}" not in taken)
+                except OSError:
+                    pass
+    return sorted(out, key=lambda x: (x[0], x[1].lower()))
+
+
+def _expand_auto(cfg):
+    """Fill every collection's sections with the auto sections found on disk; returns the signature of what was found."""
+    sig = []
+    for col in cfg["collections"]:
+        if not col.get("auto_sections"):
+            continue
+        col["sections"] = [s for s in col["sections"] if not s.get("auto")]
+        for parent, name in _auto_found(cfg, col):
+            _add_auto(col, name, parent); sig.append((col["id"], parent, name))
+    return sig
+
+
 def _derive(cfg):
     pr = cfg["project"]
     cfg["_root"], cfg["_monitor"] = ROOT, MON
@@ -215,12 +292,14 @@ def _derive(cfg):
         col.setdefault("select", {"mode": "tag"})
         col["versioned"] = bool(v.get("enabled")) and ("{version}" in (col.get("dir") or "") or "{staging}" in (col.get("dir") or ""))
         col["_grx"] = re.compile(col.get("group_regex") or ".*")   # eager: listings need it before any run is indexed
+        col["sections"] = [s for s in col["sections"] if not s.get("auto")]   # auto sections are derived, never stored
+    cfg["_auto_sig"] = _expand_auto(cfg)
     cfg["costs"]["client"] = cfg["costs"].get("client") or pr.get("client") or ""
     cfg["costs"]["project"] = cfg["costs"].get("project") or pr.get("name") or pr.get("code") or ""
     return cfg
 
 
-_cache = {"mtime": None, "cfg": None}
+_cache = {"mtime": None, "cfg": None, "scan": 0.0}
 
 
 def raw():
@@ -235,15 +314,23 @@ def raw():
 def load(fresh=False):
     mt = os.path.getmtime(PATH) if os.path.exists(PATH) else None
     if not fresh and _cache["cfg"] is not None and _cache["mtime"] == mt:
-        return _cache["cfg"]
+        cfg = _cache["cfg"]
+        if not any(c.get("auto_sections") for c in cfg["collections"]) or time.time() - _cache["scan"] < AUTO_SCAN_SECONDS:
+            return cfg
+        _cache["scan"] = time.time()   # a new folder under an auto_sections parent becomes a section without a restart
+        if [(c["id"], p, n) for c in cfg["collections"] if c.get("auto_sections") for p, n in _auto_found(cfg, c)] == cfg["_auto_sig"]:
+            return cfg
     cfg = _derive(deep_merge(copy.deepcopy(DEFAULTS), raw()))
-    _cache.update(mtime=mt, cfg=cfg)
+    _cache.update(mtime=mt, cfg=cfg, scan=time.time())
     return cfg
 
 
 def save(data):
     """Write project.json (the public keys only; derived "_" keys are dropped). Returns the validation errors, [] when saved."""
     clean = {k: v for k, v in data.items() if not k.startswith("_")}
+    for col in clean.get("collections") or []:   # auto sections come from the folders on disk, not from the file
+        if isinstance(col.get("sections"), list):
+            col["sections"] = [s for s in col["sections"] if not s.get("auto")]
     merged = _derive(deep_merge(copy.deepcopy(DEFAULTS), copy.deepcopy(clean)))
     errs = validate(merged)
     if errs:
@@ -294,6 +381,18 @@ def validate(cfg):
                 re.compile(sec.get("file_regex") or "")
             except re.error as e:
                 errs.append(f"collections[{col.get('id')}].sections[{sec.get('id')}].file_regex: {e}")
+        for k, tpl in enumerate(col.get("auto_sections") or []):
+            where = f"collections[{col.get('id')}].auto_sections[{k}]"
+            if col.get("kind") != "shots":
+                errs.append(f"{where}: only for kind shots")
+            if _auto_parent(tpl) is None or not _auto_parent(tpl):
+                errs.append(f"{where}.sub: a folder followed by /* (its subfolders become sections)")
+            if "{name}" not in (tpl.get("id") or ""):
+                errs.append(f"{where}.id: must contain {{name}} (the folder name)")
+            try:
+                re.compile(tpl.get("file_regex") or "")
+            except re.error as e:
+                errs.append(f"{where}.file_regex: {e}")
         by_sub = {}
         for sec in col.get("sections") or []:
             by_sub.setdefault(sec.get("sub") or "", []).append(sec)
@@ -310,6 +409,11 @@ def validate(cfg):
             errs.append("pairs.names: two name patterns (source, image)")
         if pr.get("unpair") not in (None, "z_old", "delete", "keep"):
             errs.append("pairs.unpair: z_old, delete or keep")
+        mx = pr.get("max_per_shot", 1)
+        if not isinstance(mx, int) or isinstance(mx, bool) or mx < 1:
+            errs.append("pairs.max_per_shot: a whole number of 1 or more")
+        elif mx > 1 and not (isinstance(pr.get("alt_names"), list) and len(pr["alt_names"]) == 2 and all("{n}" in str(n) for n in pr["alt_names"])):
+            errs.append("pairs.alt_names: two name patterns (source, image) containing {n}, needed when max_per_shot is above 1")
     for rx, _ in cfg["runs"].get("ref_roles") or []:
         try:
             re.compile(rx)
@@ -354,6 +458,10 @@ def section_for_file(col, sub, name):
     matches the name (without extension), else the first without a regex (the folder's default). None: no such section."""
     stem = os.path.splitext(name or "")[0]
     cands = [s for s in col.get("sections") or [] if (s.get("sub") or None) == sub]
+    if not cands and sub and col.get("auto_sections"):   # a folder under an auto_sections parent that no scan has seen yet
+        parent, _, leaf = sub.rpartition("/")
+        if leaf and not leaf.startswith((".", "_", "Z_")) and _add_auto(col, leaf, parent):
+            cands = [s for s in col["sections"] if s.get("sub") == sub]
     for s in cands:
         if s.get("file_regex") and re.search(s["file_regex"], stem):
             return s["id"]
@@ -388,6 +496,7 @@ def matcher(cfg, col):
     else:
         d = re.escape(fmt(d, **cfg["_vars"], version="", staging=""))
     subs = list(dict.fromkeys(re.escape(s["sub"]) for s in col.get("sections") or [] if s.get("sub")))
+    subs += list(dict.fromkeys(re.escape(p) + "/[^/]+" for p in map(_auto_parent, col.get("auto_sections") or []) if p))
     sub = f"(?:(?P<sub>{'|'.join(subs)})/)?" if subs else ""
     depth = col.get("depth", 1) if col.get("kind") == "folders" else 1
     group = r"[^/]+" if depth == 1 else r"[^/]+(?:/[^/]+)?" if depth == 2 else r".+?"
