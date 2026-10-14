@@ -135,6 +135,20 @@ alternate pair's `DET-HEEL_A_2.png` still saves its video under `DET-HEEL`.
 | `max_per_shot` | 1 | pairs a shot may have: 1 replaces, 2 or more keeps alternates |
 | `alt_names` | `["{shot}_A_{n}", "{shot}_B_{n}"]` | file names of the copies of the 2nd, 3rd… pair (`{n}` = its number) |
 
+## team
+
+Teammates' generations in the Selects tab: each monitor publishes its run records, their source images and graphs
+into `dir`, and reads everyone else's from there. The Runs tab stays this machine's.
+
+| key | default | meaning |
+|---|---|---|
+| `enabled` | `true` | publish and read; off = the Selects tab shows only this machine's provenance |
+| `dir` | `{output_root}/_monitor` | a folder every teammate sees (the shared output tree by default; `_` keeps it out of the listings) |
+| `publish_interval_s` | `30` | how often the server publishes changed records |
+
+The person is `costs.person` (default: the account's full name). Source images are stored once per content
+(`refs/<sha256[:16]>.<ext>`), so the folder grows with the distinct inputs, not with the runs.
+
 ## naming
 
 `strip_trailing_underscore` (true): ComfyUI's built-in save nodes write `name_00001_.png`; the runner renames a local

@@ -5,7 +5,7 @@ Shared by server.py, run.py, collect.py, export.py and the tools. `load()` retur
 DEFAULTS, every path expanded, plus a few derived fields (prefixed with "_"):
 
   cfg["_root"], cfg["_monitor"]   project root and monitor folder
-  cfg["_paths"]                   absolute paths: output_root, comfy_input, comfy_bin, runs, workflows, exports, selects_root, credit_log
+  cfg["_paths"]                   absolute paths: output_root, comfy_input, comfy_bin, runs, workflows, exports, selects_root, credit_log, team
   cfg["_versions"]                version folder names, newest first (["V3", "V2"]) or [] when versioning is off
   cfg["_cur"]                     the current version folder ("V3") or ""
 
@@ -144,6 +144,11 @@ DEFAULTS = {
         "person": "",                # who this machine's usage belongs to in the team ledger (default: the macOS account's full name)
         "shared_dir": "",            # a folder every teammate can reach (Dropbox, Drive): each monitor drops its ledger there and reads the others
     },
+    "team": {                 # teammates' generations in the Selects tab (workflow info, reference frames); the Runs tab stays local
+        "enabled": True,          # publish this machine's run records + source images into dir, and read the others' from it
+        "dir": "{output_root}/_monitor",   # a folder every teammate sees: inside the shared output tree by default
+        "publish_interval_s": 30,
+    },
     "naming": {"strip_trailing_underscore": True},   # name_00001_.png -> name_00001.png (ComfyUI's built-in save nodes add the underscore)
     "engines": {
         "api_nodes_extra": [],        # class_type names that mean "partner API node" besides the built-in list
@@ -281,6 +286,7 @@ def _derive(cfg):
         "comfy_input": expand(paths["comfy_input"], base), "comfy_bin": expand(paths["comfy_bin"], base),
         "runs": expand(paths["runs"], base), "workflows": expand(paths["workflows"], base), "exports": expand(paths["exports"], base),
         "credit_log": expand(cfg["costs"].get("credit_log") or "", base),
+        "team": expand((cfg.get("team") or {}).get("dir") or "{output_root}/_monitor", base),
         "moved_lookup": [expand(p, base) for p in paths.get("moved_lookup") or []],
     }
     v = cfg["versions"]

@@ -43,6 +43,8 @@ Pick several with ⇧-click (range) and ⌘-click (toggle); the floating bar sta
 (an edit shows the image it was made from, a render made with a plate shows the plate, anything else its first input;
 click another source in the panel to compare with that one instead, ⇧-click shows it in Finder), **I** the details
 panel (open by default, remembered), **F** show in Finder, Esc close. Copy buttons for the file name and the local path.
+A teammate's image (Selects tab) shows their run the same way, with a pill naming them; its source images and graph
+come from the shared team folder (`team` in CONFIG.md).
 
 ## Export
 

@@ -19,7 +19,7 @@ import argparse, json, os, re, shutil, sys
 
 TEMPLATE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CODE = ["monitor/config.py", "monitor/server.py", "monitor/run.py", "monitor/watch.py", "monitor/marks.py", "monitor/collect.py", "monitor/export.py", "monitor/credits.py",
-        "monitor/costs.py", "monitor/tags.py", "monitor/tunnel.py", "monitor/index.html", "monitor/start.py", "monitor/start.command", "monitor/VERSION",
+        "monitor/costs.py", "monitor/team.py", "monitor/tags.py", "monitor/tunnel.py", "monitor/index.html", "monitor/start.py", "monitor/start.command", "monitor/VERSION",
         "tools/selects_index.py", "tools/check_monitor.py", "tools/marks_migrate.py"]
 sys.path.insert(0, os.path.join(TEMPLATE, "monitor"))
 import config as cfgmod  # noqa: E402

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 (2026-10-14)
+
+- New: teammates' generations in the Selects tab (`team`, on by default). Each monitor publishes its finished run records
+  into `team.dir` (default `{output_root}/_monitor`, inside the shared output tree): `runs/<person>/<id>.json` with the
+  files each run made, the source images it used in `refs/` (stored once by content) and its API graph in `workflows/`.
+  The Selects tab finds a teammate's file there by its path, so the lightbox shows their run's settings, prompt and
+  reference frames, and hold-to-compare and final pairs work with their source images. A pill names the person. The Runs
+  tab still shows only this machine's runs. Publishing runs in the server every `team.publish_interval_s`, or
+  `python3 monitor/team.py` once; every teammate needs 0.4.0 for their runs to appear.
+- `_sources.jsonl` lines carry `by` (the person), so a teammate's run id is never matched against a local run of the same id; an older line without `by` whose run id belongs to a local run with a different title is treated as another machine's too.
+- Fix: depth-0 folder collections no longer list files inside `_` folders.
+
 ## 0.3.4 (2026-10-14)
 
 - Fix: files inside a folder whose name starts with `_` (the yaple Save Video (Path) node's `_10bit/` originals,

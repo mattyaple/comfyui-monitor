@@ -487,7 +487,7 @@ function runKv(r) {
     ${r.cost ? `<b>cost</b><code>${fmtCost(r.cost)}${r.cost.balance_usd != null ? ` <span class="small">(balance ${usd(r.cost.balance_usd)})</span>` : ''}${r.cost.error ? ` <span class="small" style="color:var(--err)">${esc(r.cost.error)}</span>` : ''}</code>` : ''}
     ${(r.tags || []).length ? `<b>tags</b><code>${esc(r.tags.join(', '))}</code>` : ''}
     ${r.note ? `<b>note</b><code>${esc(r.note)}</code>` : ''}
-    <b>workflow</b><code>${esc(r.workflow || '—')}</code>
+    <b>workflow</b><code>${r.workflow_shared ? `<a href="/full?src=${encodeURIComponent('team:' + r.workflow_shared)}" target="_blank" title="the shared copy of ${esc(r.person || 'the teammate')}'s graph">${esc(r.workflow)}</a>` : esc(r.workflow || '—')}</code>
     <b>prompt_id</b><code>${esc(r.prompt_id || '—')}</code>
   </div>`;
 }
@@ -499,10 +499,11 @@ function refRole(name, r, i) {
 }
 function runRefs(r, active) {
   const vs = r.ref_versions || (r.refs || []).map(p => ({src: 'in:' + p, state: 'unknown', v: ''}));
-  const refs = vs.map((v, i) => { const p = (r.refs || [])[i] || v.src.slice(3), q = encodeURIComponent(v.src) + (v.v ? '&v=' + v.v : '');
-    const tag = v.state === 'archived' ? '<span class="old" title="replaced since this run; showing the retired copy it used">old version</span>' : v.state === 'changed' ? '<span class="old" title="replaced since this run; the version it used was not found in Z_OLD/">file replaced</span>' : '';
+  const refs = vs.map((v, i) => { const p = (r.refs || [])[i] || v.src.replace(/^\w+:/, ''), q = encodeURIComponent(v.src) + (v.v ? '&v=' + v.v : '');
+    const tag = v.state === 'archived' ? '<span class="old" title="replaced since this run; showing the retired copy it used">old version</span>' : v.state === 'changed' ? '<span class="old" title="replaced since this run; the version it used was not found in Z_OLD/">file replaced</span>'
+      : v.state === 'missing' ? '<span class="old" title="a teammate\'s input that was not copied into the team folder">not shared</span>' : '';
     const a = active === undefined ? ` target="_blank" data-src="${esc(v.src)}" onclick="return revealSrc(event, this.dataset.src)"` : ` class="${active && active.ref === i ? 'cmpsel' : ''}" onclick="return lbPickRef(event,${i})"`;
-    const tip = esc(v.src.slice(3)) + (active === undefined ? '\nclick: show in Finder · ⌘-click: open the image' : '\nclick: use for hold-to-compare · ⇧ / ⌘-click: show in Finder');
+    const tip = esc(r.team ? p : v.src.replace(/^\w+:/, '')) + (active === undefined ? '\nclick: show in Finder · ⌘-click: open the image' : '\nclick: use for hold-to-compare · ⇧ / ⌘-click: show in Finder');
     return `<a href="/full?src=${q}"${a} title="${tip}"><img loading="lazy" src="/thumb?src=${q}&w=240"><span class="n">${i + 1}</span>${tag}<div class="cap"><b>${esc(refRole(base(p), r, i))}</b> · ${esc(base(p))}</div></a>`; }).join('');
   return `<div class="refs">${refs || '<span class="small">none</span>'}</div>`;
 }
@@ -703,6 +704,9 @@ async function setPair(im, on) {
 const pairable = im => !!(CFG.pairs && CFG.pairs.enabled && im.col && (colById(im.col) || {}).kind === 'shots' && (im.run || im.tagged !== undefined));
 function lbTogglePair() { const im = lb.items[lb.i]; if (!im || !pairable(im)) return; setPair(im, !im.pair).then(ok => { if (ok) lbShow(); }); }
 
+// the run record behind an image: this machine's run, or a teammate's published one (im.team)
+const runOf = im => !im ? null : im.team ? teamRuns[im.team] || null : (im.run && runs.find(x => x.id === im.run)) || null;
+const cmpKey = r => r.team || r.id;
 // ---- lightbox -------------------------------------------------------------------------------------------------------------
 let lb = {items: [], i: 0, action: null};
 function lbOpen(items, i, action) { lb = {items, i, action}; $('#lb').hidden = false; lbShow(); return false; }
@@ -743,16 +747,16 @@ function lbReveal() { const im = lb.items[lb.i]; if (im) revealIm(im); }
 let lbInfoOn = true; try { lbInfoOn = localStorage.getItem('lbInfoOpen') !== '0'; } catch (e) {}
 function lbRenderInfo(im) {
   const box = $('#lbInfo'); $('#lbInfoBtn').classList.toggle('on', lbInfoOn); box.hidden = !lbInfoOn; if (!lbInfoOn) return;
-  const r = im.run && runs.find(x => x.id === im.run);
+  const r = runOf(im);
   if (!r) {
     const dir = im.path ? im.path.slice(0, im.path.lastIndexOf('/') + 1) : '', mark = isSelIm(im) ? 'select' : isNg(im) ? 'NG' : '—';
     box.innerHTML = `<div class="head">${catPill('other')}${im.group ? `<span class="grp">${esc(im.group)}</span>` : ''}<b>${esc(im.name || '')}</b>
-        <span class="small">No generation record for this image${im.run ? ' (run ' + esc(im.run) + ' not found)' : ': added by hand, or made before runs were logged'}.</span></div>
+        <span class="small">${im.by ? `Made ${im.by === 'another machine' ? 'on another machine' : 'by ' + esc(im.by)}${im.title ? ` (“${esc(im.title)}”)` : ''}; the run record has not been shared yet (that monitor needs template 0.4.0 or later)` : `No generation record for this image${im.run ? ' (run ' + esc(im.run) + ' not found)' : ': added by hand, or made before runs were logged'}`}.</span></div>
       <div><div class="kv"><b>file</b><code>${esc(im.name || '—')}</code>${dir ? `<b>folder</b><code>${esc(dir)}</code>` : ''}${im.w && im.h ? `<b>size</b><code>${im.w} × ${im.h} px</code>` : ''}
         ${im.sec ? `<b>section</b><code>${esc(secLabel(im))}</code>` : ''}${im.selectable ? `<b>mark</b><code>${mark}</code><b>select →</b><code>${esc(selDestText(im))}</code>` : im.caption ? `<b>from</b><code>${esc(im.caption)}</code>` : ''}</div></div>
       <div><b class="small">Source images</b><div class="refs"><span class="small">none recorded, so there is nothing to hold-compare with</span></div></div>`;
     return; }
-  box.innerHTML = `<div class="head"><span class="pill ${r.status}">${r.status}</span><span class="pill" style="${srvStyle(r.server)};border-color:currentColor">${esc(r.server || 'local')}</span>${catPill(r.category)}<span class="grp">${esc(r.group || '')}</span>
+  box.innerHTML = `<div class="head"><span class="pill ${r.status}">${r.status}</span>${r.team ? `<span class="pill" style="color:var(--accent);border-color:currentColor" title="a teammate's run, from the shared team folder">${esc(r.person || 'teammate')}</span>` : ''}<span class="pill" style="${srvStyle(r.server)};border-color:currentColor">${esc(r.server || 'local')}</span>${catPill(r.category)}<span class="grp">${esc(r.group || '')}</span>
       <b>${esc(r.title)}</b><span class="small">${fmtT(r.started)}${r.finished ? ' → ' + fmtT(r.finished) : ''} · ${dur(r)} · ${esc(r.id)}</span>${im.selectable ? `<span class="small">select → ${esc(selDestText(im))}</span>` : ''}</div>
     <div>${runKv(r)}<b class="small">Source images</b> <span class="small">· click one to hold-compare with it · ⇧ / ⌘-click shows it in Finder</span>${runRefs(r, lbCompare(im))}</div>
     <div><b class="small">Prompt</b><div class="prompt">${esc(r.prompt || '—')}</div></div>`;
@@ -769,17 +773,17 @@ function lbGroup(d) {
 async function lbToggleSelect() { const im = lb.items[lb.i]; if (!im || !im.selectable) return; if (await setSelect(im, !isSelIm(im))) lbShow(); }
 let lbHeld = false, cmpRefs = store('lbCmpRef', {});
 function lbCompare(im) {
-  const r = im && im.run && runs.find(x => x.id === im.run); if (!r) return null;
-  const k = cmpRefs[r.id], refs = r.refs || [], vs = r.ref_versions || [];
+  const r = runOf(im); if (!r) return null;
+  const k = cmpRefs[cmpKey(r)], refs = r.refs || [], vs = r.ref_versions || [];
   if (k != null && refs[k]) { const v = vs[k]; return {src: v ? v.src : 'in:' + refs[k], v: (v && v.v) || '', kind: 'image ' + (k + 1), name: base(refs[k]), ref: k, manual: true}; }
   const c = r.compare; if (!c) return null;
   const v = c.ref != null && vs[c.ref]; return v && v.state === 'archived' ? {...c, src: v.src, v: v.v} : c;
 }
 const cmpUrl = c => thumbUrl({src: c.src}, 1920) + (c.v ? '&v=' + encodeURIComponent(c.v) : '');
 function lbPickRef(e, k) {
-  e.preventDefault(); const im = lb.items[lb.i], r = im && im.run && runs.find(x => x.id === im.run); if (!r || !(r.refs || [])[k]) return false;
+  e.preventDefault(); const im = lb.items[lb.i], r = runOf(im); if (!r || !(r.refs || [])[k]) return false;
   if (e.shiftKey || e.metaKey || e.ctrlKey) { const v = (r.ref_versions || [])[k]; post('/api/reveal?src=' + encodeURIComponent(v ? v.src : 'in:' + r.refs[k])).then(x => { if (!x.ok) toast('Show in Finder failed: ' + x.error, 6000); }); return false; }
-  if (cmpRefs[r.id] === k) delete cmpRefs[r.id]; else cmpRefs[r.id] = k;
+  if (cmpRefs[cmpKey(r)] === k) delete cmpRefs[cmpKey(r)]; else cmpRefs[cmpKey(r)] = k;
   save('lbCmpRef', cmpRefs); lbShow(); const c = lbCompare(im); toast(c ? `⇄ Hold to compare with ${c.kind}: ${c.name}` : 'No compare image for this run now', 3000);
   return false;
 }
@@ -826,6 +830,7 @@ function openRunImage(e, id, k) {
 
 // ---- Selects tab ------------------------------------------------------------------------------------------------------------
 let opts = null, optVisible = [], optStale = false;
+const teamRuns = {};   // "person/run id" -> a teammate's published run record (Selects tab only; the Runs tab is this machine's)
 let optMode = store('optMode', null), optVer = null;
 const verPref = key => { const p = store(key, null); return p && p.cur === CFG._cur && CFG._versions.includes(p.v) ? p.v : CFG._cur; };
 const verSave = (key, v) => save(key, {cur: CFG._cur, v});
@@ -890,6 +895,7 @@ async function loadOptions(quiet) {
   $('#optHelp').innerHTML = `${col.versioned && optVer !== CFG._cur ? `<b style="color:var(--warn)">${optVer} is frozen: new renders go to ${CFG._cur}</b> · ` : ''}★ / <b>S</b> select → ${sel.mode === 'copy' ? 'copied to ' + esc(sel.dest || 'the select folder') : tagName + ' Finder tag (nothing is copied)'} · ✕ / <b>X</b> mark NG (${esc((CFG.selects.tags || {}).ng || 'Red')} tag) · folder button: show in Finder${secs.length ? ' · ⌥-click a chip to solo it' : ''} · ⇧ / ⌘-click to pick several`;
   try { opts = await fetch(`/api/collection?id=${encodeURIComponent(optMode)}&v=${encodeURIComponent(optVer || '')}`).then(r => r.json()); } catch (e) { toast('Could not load: ' + e, 6000); return; }
   if (opts.error) { toast(opts.error, 6000); opts = {groups: []}; }
+  Object.assign(teamRuns, opts.team_runs || {});
   // a folder that became a section after this page loaded (auto_sections): fetch the config again so it gets its label and chip
   if ((col.auto_sections || []).length && !loadOptions.again && opts.groups.some(g => g.files.some(f => f.section && !secOf(col, f.section)))) {
     loadOptions.again = true; try { CFG = await fetch('/api/config').then(r => r.json()); } catch (e) {} return loadOptions(quiet); }
@@ -898,7 +904,7 @@ async function loadOptions(quiet) {
   if (!quiet) toast(`Refreshed · ${opts.groups.reduce((n, p) => n + p.files.length, 0)} images`, 2000);
 }
 function setOptVer(v) { if (v === optVer) return; optVer = v; verSave('optVer', v); pickClear(); loadOptions(true); }
-const capOf = f => [f.run, f.title, f.seed != null ? 'seed ' + f.seed : '', f.server && f.server !== 'local' ? f.server : ''].filter(Boolean).join(' · ');
+const capOf = f => [f.by, f.run, f.title, f.seed != null ? 'seed ' + f.seed : '', f.server && f.server !== 'local' ? f.server : ''].filter(Boolean).join(' · ');
 function optItemsAll() {
   const col = curCol(), pf = $('#optPage').value, dir = optSort === 'asc' ? -1 : 1, secs = colSecs(col);
   const rank = s => { const i = (col.sections || []).findIndex(x => x.id === s); if (i >= 0) return (col.sections[i].sub ? 0 : 1) * 100 + i;
@@ -961,7 +967,7 @@ function renderOptions() {
     if (hasStages(col)) { const sec = col.sections[i]; const a = stIds.indexOf(stageOf(sec)), b = sec.shot ? shIds.indexOf(sec.shot) : 999; return (a < 0 ? 99 : a) * 10000 + (b < 0 ? 999 : b) * 10 + (i % 10); }
     return (col.sections[i].sub ? 0 : 1) * 100 + i; };
   for (const [page, g] of groups) {
-    const pend = optPend[page] || [], fresh = pend.filter(p => !g.items.some(x => x.run === p.r.id));
+    const pend = optPend[page] || [], fresh = pend.filter(p => !g.items.some(x => !x.team && x.run === p.r.id));
     if (!g.items.length && !pend.length) continue;
     const isClosed = !pf && closed.has(page);
     const secsHere = [...new Set(g.items.map(x => x.sec).filter(x => x))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, {numeric: true}));
@@ -970,7 +976,7 @@ function renderOptions() {
     const tiles = (list, more = '') => { html += '<div class="ogrid">'; for (const im of list) { items.push(im); html += tileHtml(im, items.length - 1); } html += more + '</div>'; };
     const placed = new Set();
     const grid = (list, mine = []) => {  // one labeled row per batch (the run that made the images); a plain grid when no run is known
-      const by = new Map(); list.forEach(im => { const k = im.run || ''; by.has(k) ? by.get(k).push(im) : by.set(k, [im]); });
+      const by = new Map(); list.forEach(im => { const k = im.team || im.run || ''; by.has(k) ? by.get(k).push(im) : by.set(k, [im]); });
       mine.filter(p => !by.has(p.r.id) && !placed.has(p.r.id)).forEach(p => { placed.add(p.r.id); html += pendRow(p); });
       if (by.size === 1 && by.has('')) return tiles(list);
       const rows = [];
@@ -978,8 +984,8 @@ function renderOptions() {
         if (run && !live && l.length === 1 && last && last.singles) { last.l.push(l[0]); last.n++; } else rows.push({run, l: [...l], n: 1, singles: !!run && !live && l.length === 1}); }
       for (const {run, l, n} of rows) {
         if (n > 1) { html += `<div class="obatch"><div class="blab"><b>${plural(n, 'run')}</b>one image each: ${esc(l[0].run)} … ${esc(l[n - 1].run)}<span class="n">${plural(n, 'image')}</span></div>`; tiles(l); html += '</div>'; continue; }
-        const f = l[0], rr = run && runs.find(x => x.id === run), extra = run ? [f.seed != null ? 'seed ' + f.seed : '', f.server && f.server !== 'local' ? f.server : '', rr && rr.cost && rr.cost.usd != null ? usd(rr.cost.usd, 2) : ''].filter(Boolean).join(' · ') : '';
-        html += `<div class="obatch"><div class="blab">${run ? `<b>${esc(run)}</b>${esc(f.title || '')}` : '<b>no run record</b>added by hand or before logging'}<span class="n">${plural(l.length, 'image')}${extra ? ' · ' + esc(extra) : ''}</span></div>`;
+        const f = l[0], rr = run && (f.team ? teamRuns[run] : runs.find(x => x.id === run)), extra = run ? [f.seed != null ? 'seed ' + f.seed : '', f.server && f.server !== 'local' ? f.server : '', rr && rr.cost && rr.cost.usd != null ? usd(rr.cost.usd, 2) : ''].filter(Boolean).join(' · ') : '';
+        html += `<div class="obatch"><div class="blab">${run ? `<b>${esc(f.team ? f.run : run)}</b>${f.team ? `<span class="pill" style="color:var(--accent);border-color:currentColor">${esc(f.by || 'teammate')}</span> ` : ''}${esc(f.title || '')}` : '<b>no run record</b>added by hand or before logging'}<span class="n">${plural(l.length, 'image')}${extra ? ' · ' + esc(extra) : ''}</span></div>`;
         const live = pend.find(p => p.r.id === run); if (live) placed.add(run);
         tiles(l, live ? pendTiles(live) : ''); html += '</div>';
       }

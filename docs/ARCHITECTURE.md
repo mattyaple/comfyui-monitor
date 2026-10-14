@@ -29,6 +29,7 @@ Plain files, one Python process, one HTML page. Nothing runs unless `run.py` or 
 | `costs.py` | This machine's billed runs + credit-log rows + manual expenses → ledger; shared-folder and import/export merging across teammates; summaries by model / group / day / person; backfill. |
 | `credits.py` | Comfy billing: balance, cost per prompt id (from `/api/billing/events`), the append-only shared credit log. Re-executes itself with comfy-cli's Python so the sign-in is reused. |
 | `marks.py` | Marks (select / NG / final pair): the `_marks.json` sidecar beside the files (shared, every OS) and, on a Mac, Finder tags mirrored through `tags.py` (`selects.marks`). |
+| `team.py` | Publishes this machine's finished run records (+ source images by content, + API graphs) into `team.dir` in the shared tree; indexes the teammates' records by output path for the Selects tab. |
 | `tags.py` | Finder label colors (macOS): read through `getxattr` in-process, written with `xattr`; no-ops elsewhere. |
 | `tunnel.py` | SSH tunnels to remote servers (`servers.json`); never starts a stopped cloud instance. Shares its socket name with the comfyui skill's tunnel script so tunnels are reused. |
 | `start.py` / `start.command` | Start the server detached (or in the foreground), open the page, stop it. |
@@ -90,9 +91,9 @@ sees fresh Finder writes) into `monitor/selects_index.json` for sessions that ca
 | GET `/api/runs` | `{runs: [...]}` newest first (see the record above) |
 | GET `/api/queue` | queue state per server; a remote server reads as offline when its tunnel is down (polling never opens tunnels) |
 | GET `/api/selects` | current version, versions, collection ids |
-| GET `/api/collection?id=&v=` | `{id, version, groups: [{group, files: [...], dest}]}`; files carry marks, size, section, provenance |
+| GET `/api/collection?id=&v=` | `{id, version, groups: [{group, files: [...], dest}], team_runs}`; files carry marks, size, section, provenance (`team` = "person/run id" of a teammate's record in `team_runs`) |
 | GET `/api/path?src=&srv=` | the local path of an image |
-| GET `/thumb?src=&w=`, `/full?src=` | cached JPEG thumbnail, the file. `src` = `out:<path under the server's output root>`, `in:<path under ComfyUI input>`, `exp:<export file>` |
+| GET `/thumb?src=&w=`, `/full?src=` | cached JPEG thumbnail, the file. `src` = `out:<path under the server's output root>`, `in:<path under ComfyUI input>`, `exp:<export file>`, `team:<path under team.dir>` |
 | GET `/api/exports`, `/export/<name>` | exports folder listing, one file |
 | GET `/api/costs?period=all|90|30|7`, `/api/costs/balance?refresh=1` | the summary (`costs.summary`), the balance |
 | POST `/api/select?src=&srv=&col=&group=&sec=&v=&on=` | mark / unmark a select |

@@ -19,7 +19,7 @@ GET
   /api/exports             files in the exports folder          /export/<name>  one of them
   /api/costs?period=       cost summary (runs, credit log, manual expenses, balance, budget)
   /api/costs/balance?refresh=1
-  /thumb?src=&w=  /full?src=   cached JPEG thumbnail / the full file. src = out:<path under the server's output root> | in:<path under ComfyUI input> | exp:<export file>
+  /thumb?src=&w=  /full?src=   cached JPEG thumbnail / the full file. src = out:<path under the server's output root> | in:<path under ComfyUI input> | exp:<export file> | team:<path under team.dir>
 POST
   /api/select?src=&srv=&col=&group=&sec=&v=&on=1|0   mark a select (tag mode: Finder's yellow tag; copy mode: also copied to the collection's dest)
   /api/ng?src=&srv=&on=1|0                           mark NG (Finder's red tag; exclusive with select)
@@ -130,9 +130,10 @@ def locate(root, rel):
 
 
 def resolve(src, server=None):
-    """out:<rel> (a server's output root), in:<rel> (ComfyUI input), exp:<name> (exports) -> absolute path, or None."""
+    """out:<rel> (a server's output root), in:<rel> (ComfyUI input), exp:<name> (exports), team:<rel> (the shared team folder:
+    teammates' source images and workflows) -> absolute path, or None."""
     kind, _, rel = (src or "").partition(":")
-    base = {"out": out_root(server), "in": cfg()["_paths"]["comfy_input"], "exp": cfg()["_paths"]["exports"]}.get(kind)
+    base = {"out": out_root(server), "in": cfg()["_paths"]["comfy_input"], "exp": cfg()["_paths"]["exports"], "team": cfg()["_paths"]["team"]}.get(kind)
     if not base:
         return None
     p = os.path.normpath(os.path.join(base, rel))
@@ -510,7 +511,7 @@ def remove_run(run_id):
 
 # ---- collections (the Selects tab) ---------------------------------------------------------------------------------------
 
-_ref_runs = {"sig": None, "map": {}}
+_ref_runs = {"sig": None, "map": {}, "titles": {}}
 
 
 def run_index():
@@ -527,8 +528,13 @@ def run_index():
             for o in list(r.get("outputs") or []) + list((r.get("collected") or {}).values()):
                 if local or o in (r.get("collected") or {}).values():
                     m[o] = prov
-        _ref_runs.update(sig=sig, map=m)
+        _ref_runs.update(sig=sig, map=m, titles={r.get("id"): r.get("title") for r in read_runs()})
     return _ref_runs["map"]
+
+
+def local_title(run_id):
+    """The title of this machine's run with that id (None when there is none); run_index() refreshes it."""
+    return _ref_runs["titles"].get(run_id)
 
 
 def sources_meta(d):
@@ -552,13 +558,67 @@ def list_images(d):
     return [f for f in os.listdir(d) if f.lower().endswith(MEDIA_EXT) and not f.startswith((".", "_"))] if os.path.isdir(d) else []
 
 
-def file_entry(c, col, group, sid, ver, d, f, meta, idx, dest_set):
+_me = {"t": 0, "v": ""}
+
+
+def me():
+    """This machine's person (costs.person), cached for a few seconds: listings ask once per file."""
+    if time.time() - _me["t"] > 10:
+        _me.update(t=time.time(), v=costs.person())
+    return _me["v"]
+
+
+def file_entry(c, col, group, sid, ver, d, f, meta, idx, dest_set, team_runs=None):
     p = os.path.join(d, f); rel = config.relp(p, c["_paths"]["output_root"])
-    pv = meta.get(f) or idx.get(rel) or {}
+    line = meta.get(f) or {}
+    pv = idx.get(rel)                                  # one of this machine's runs
+    tk = None
+    if not pv and team_runs is not None:              # else a teammate's, from the shared team folder
+        tk = team.find(rel, line.get("run"), line.get("by"))
+        if tk:
+            pv = team.record(tk)
+    foreign = bool(line.get("by") and line.get("by") != me())
+    if not pv and not foreign and line.get("run") and line["run"] in _ref_runs["titles"] and local_title(line["run"]) != line.get("title"):
+        foreign = True                                 # a line written before "by" existed whose run id is a different local run (ids are per machine)
+    if not pv and not foreign:
+        pv = line                                      # a _sources.jsonl line of this machine
+    pv = pv or {k: line.get(k) for k in ("title", "seed", "server", "model")}   # a teammate's file without a published record
     e = {"name": f, "src": "out:" + rel, "srv": "local", "path": p, "section": sid, **marks(p), **dims(p),
-         **{k: pv.get(k) for k in ("run", "title", "seed", "server", "model")}, "mtime": os.path.getmtime(p)}
+         **{k: pv.get(k) for k in ("title", "seed", "server", "model")}, "run": pv.get("run") or pv.get("id") if not tk else pv.get("id"),
+         "mtime": os.path.getmtime(p)}
+    if tk:
+        e["team"] = tk; e["by"] = pv.get("person"); team_runs.setdefault(tk, None)
+    elif foreign:
+        e["by"] = line.get("by") or "another machine"; e.pop("run", None)   # the run id is the teammate's: never match it against a local run
     e["sel"] = bool(e.get("tagged")) or (f in dest_set)
     return e
+
+
+def team_view(key):
+    """A teammate's published record as the page uses a run (lightbox info, refs, hold-compare): inputs come from the
+    team folder's refs/ instead of this machine's ComfyUI input."""
+    r = dict(team.record(key) or {})
+    if not r:
+        return None
+    store = r.get("ref_store") or {}
+    r["ref_versions"] = [{"src": "team:refs/" + store[x], "state": "current", "v": ""} if x in store else {"src": "in:" + x, "state": "missing", "v": ""}
+                         for x in r.get("refs") or []]
+    r["team"] = key
+    try:
+        hit = classify({"collected": {"": (r.get("files") or [None])[0]}}) if r.get("files") else None
+    except Exception:
+        hit = None
+    r["category"], r["group"], r["section"], ver = hit or (None, r.get("group"), r.get("section"), r.get("version") or "")
+    r["version"] = ver or r.get("version") or ""
+    try:
+        cmp = compare_for(r, r["category"] or "", r["group"] or "", r["section"], r["version"]) if r["category"] else None
+    except OSError:
+        cmp = None
+    if cmp and cmp["src"].startswith("in:") and cmp.get("ref") is not None:
+        v = r["ref_versions"][cmp["ref"]]
+        cmp = {**cmp, "src": v["src"]} if v["src"].startswith("team:") else None
+    r["compare"] = cmp
+    return r
 
 
 def collection_listing(col_id, ver=None):
@@ -569,7 +629,7 @@ def collection_listing(col_id, ver=None):
         ver = ver if ver in c["_versions"] else c["_cur"]
     else:
         ver = ""
-    root = config.col_dir(c, col, ver); idx = run_index(); groups = []
+    root = config.col_dir(c, col, ver); idx = run_index(); groups = []; team_runs = {} if team.enabled(c) else None
     if not os.path.isdir(root):
         return {"id": col_id, "version": ver, "groups": [], "root": root, "missing": True}
     if col.get("kind") == "shots":
@@ -580,7 +640,7 @@ def collection_listing(col_id, ver=None):
                 d = config.group_dir(c, col, g, sid, ver)
                 dest = config.select_dest(c, col, g, sid, ver); dests[s["id"]] = dest
                 meta = sources_meta(d); ds = dest_names(dest)
-                files += [file_entry(c, col, g, s["id"], ver, d, f, meta, idx, ds) for f in list_images(d) if config.section_accepts(col, s, f)]
+                files += [file_entry(c, col, g, s["id"], ver, d, f, meta, idx, ds, team_runs) for f in list_images(d) if config.section_accepts(col, s, f)]
             files.sort(key=lambda e: e["name"], reverse=True)
             groups.append({"group": g, "files": files, "dest": {k: (config.relp(v, c["_root"]) if v and v.startswith(c["_root"]) else v) for k, v in dests.items() if v}})
     else:
@@ -588,7 +648,7 @@ def collection_listing(col_id, ver=None):
         subs = []
         if depth == 0:
             for d, dirs, fs in os.walk(root):
-                dirs[:] = sorted(x for x in dirs if not x.startswith("."))
+                dirs[:] = sorted(x for x in dirs if not x.startswith((".", "_")))
                 if any(f.lower().endswith(MEDIA_EXT) and not f.startswith((".", "_")) for f in fs):
                     subs.append(config.relp(d, root) if d != root else "(top level)")
         else:
@@ -605,7 +665,7 @@ def collection_listing(col_id, ver=None):
             dest = config.select_dest(c, col, g, None, ver); meta = sources_meta(d); ds = dest_names(dest)
             files = []
             for f in list_images(d):
-                e = file_entry(c, col, g, None, ver, d, f, meta, idx, ds)
+                e = file_entry(c, col, g, None, ver, d, f, meta, idx, ds, team_runs)
                 if rx:
                     stem = re.sub(r"_\d+_?$", "", os.path.splitext(f)[0]); m = rx.search(stem)
                     e["section"] = m.group(1) if m and m.groups() else ("other" if not m else stem)
@@ -615,7 +675,7 @@ def collection_listing(col_id, ver=None):
                            "dest": {"": config.relp(dest, c["_root"]) if dest and dest.startswith(c["_root"]) else dest} if dest else {}})
         if depth == 0:
             groups.sort(key=lambda g: -g["latest"])
-    return {"id": col_id, "version": ver, "groups": groups, "root": root}
+    return {"id": col_id, "version": ver, "groups": groups, "root": root, "team_runs": {k: team_view(k) for k in team_runs or {}}}
 
 
 def select_counts():
@@ -698,6 +758,9 @@ def pair_source_of(rel, col, group, ver):
     """The source image of an output (the first input of the run that made it): (rel path under output_root or None, abs path or None)."""
     prov = run_index().get(rel) or {}
     rec = next((r for r in read_runs() if r.get("id") == prov.get("run")), None) if prov.get("run") else None
+    tk = None if rec else team.find(rel)
+    if tk:
+        rec = team.record(tk)
     refs = (rec or {}).get("refs") or []
     if not refs:
         return None, None
@@ -705,6 +768,10 @@ def pair_source_of(rel, col, group, ver):
     hit = find_group_file(col, group, name, ver or None)
     if hit:
         return hit
+    if tk:                                             # a teammate's run: its source image from the team folder
+        name = (rec.get("ref_store") or {}).get(refs[0])
+        q = os.path.join(cfg()["_paths"]["team"], "refs", name) if name else None
+        return (None, q) if q and os.path.isfile(q) else (None, None)
     q = os.path.join(cfg()["_paths"]["comfy_input"], refs[0])
     return (None, q) if os.path.isfile(q) else (None, None)
 
@@ -966,6 +1033,7 @@ def export_delete(name):
 # ---- costs (costs.py) -------------------------------------------------------------------------------------------------
 
 import costs  # noqa: E402
+import team  # noqa: E402
 
 
 # ---- HTTP ------------------------------------------------------------------------------------------------------------
@@ -1091,7 +1159,7 @@ class H(BaseHTTPRequestHandler):
                 fresh = "no-store" if g1("src").startswith("in:") else None  # inputs get replaced under the same name
                 if u.path == "/full":
                     ext = os.path.splitext(p)[1].lower()
-                    ctype = {".png": "image/png", ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm", ".mkv": "video/x-matroska"}.get(ext, "image/jpeg")
+                    ctype = {".png": "image/png", ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm", ".mkv": "video/x-matroska", ".json": "application/json"}.get(ext, "image/jpeg")
                     return self.send_file(p, ctype, fresh or "max-age=3600")
                 t = thumb(p, int(g1("w", "640")))
                 if not t:
@@ -1113,4 +1181,6 @@ if __name__ == "__main__":
     if c["runs"].get("watch_ui", True):
         import watch; watch.start()
     threading.Thread(target=sync_select_copy_tags, daemon=True).start()
+    if team.enabled(c):
+        team.start()
     ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()

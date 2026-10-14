@@ -93,10 +93,18 @@ def _prune(root, rel):
         parts.pop()
 
 
+def _person():
+    try:
+        import costs
+        return costs.person()
+    except Exception:
+        return None
+
+
 def _record(d, name, rec, rel, how):
     with open(os.path.join(d, "_sources.jsonl"), "a") as fh:
         fh.write(json.dumps({"file": name, "run": rec.get("id"), "server": rec.get("server"), "source": rel, "seed": rec.get("seed"),
-                             "title": rec.get("title"), "model": rec.get("model"), "workflow": rec.get("workflow"), "tags": rec.get("tags"),
+                             "title": rec.get("title"), "model": rec.get("model"), "workflow": rec.get("workflow"), "tags": rec.get("tags"), "by": _person(),
                              "via": how, "collected": datetime.now().isoformat(timespec="seconds")}) + "\n")
 
 
