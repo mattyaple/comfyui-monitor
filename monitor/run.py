@@ -638,7 +638,7 @@ def main():
                     pre = scfg.get("output_prefix", "")
                     if pre and rel.startswith(pre):
                         rel = rel[len(pre):]
-                    if rel not in rec["outputs"]:
+                    if rel not in rec["outputs"] and not config.sidecar_output(rel):
                         rec["outputs"].append(rel); print(f"[run]   saved {rel}")
                         if t_gen0 and rec["gen_seconds"] is None:
                             rec["gen_seconds"] = round(time.time() - t_gen0, 1)
@@ -663,7 +663,7 @@ def main():
         hits = []
         for _ in range(45):
             if folder_only:
-                hits = sorted(os.path.join(d, f) for d, dirs, files in os.walk(base) if d[len(base):].count("/") < 3
+                hits = sorted(os.path.join(d, f) for d, dirs, files in os.walk(base) if d[len(base):].count("/") < 3 and "/_" not in d[len(base):]
                               for f in files if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm", ".mkv")) and not f.startswith(".") and os.path.getmtime(os.path.join(d, f)) >= t0)
             else:
                 hits = sorted(f for f in glob.glob(os.path.join(base, prefix + "_*")) if os.path.getmtime(f) >= t0)

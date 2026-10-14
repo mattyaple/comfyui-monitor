@@ -29,6 +29,12 @@ if os.name == "nt":
         setattr(os.path, _name, _fwd(getattr(_ntpath, _name)))
 
 
+def sidecar_output(rel):
+    """True for a file inside a folder whose name starts with "_" (the yaple video saver's _10bit/ originals, _removed/): kept on
+    disk, never listed as a run output."""
+    return any(part.startswith("_") for part in str(rel).replace("\\", "/").split("/")[:-1])
+
+
 def relp(path, root):
     """path relative to root, with forward slashes on every platform."""
     return os.path.relpath(path, root).replace("\\", "/")

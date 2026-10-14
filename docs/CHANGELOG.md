@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.4 (2026-10-14)
+
+- Fix: files inside a folder whose name starts with `_` (the yaple Save Video (Path) node's `_10bit/` originals,
+  `_removed/`) are never run outputs: skipped by the runner, the watcher and the run cards (`config.sidecar_output`).
+  Before, a video run listed its 10-bit original as a second thumbnail.
+
 ## 0.3.3 (2026-10-14)
 
 - New: `pairs.max_per_shot` (1 by default, the old behaviour: a new final pair replaces the shot's previous one). Set it

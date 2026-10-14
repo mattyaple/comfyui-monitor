@@ -178,6 +178,8 @@ def outputs_from_history(entry, g, c, scfg, t0, t1):
             if o.get("type") != "output" or not o.get("filename"):
                 continue
             sub = o.get("subfolder") or ""
+            if config.sidecar_output(os.path.join(sub, o["filename"])):
+                continue
             for cand in (os.path.join(root, project_rel(sub, c, scfg) or "\x00", o["filename"]), "/" + os.path.join(sub, o["filename"]), os.path.join(comfy_out, sub, o["filename"])):
                 if "\x00" not in cand and os.path.isfile(cand) and cand.startswith(root + "/"):
                     found.append(config.relp(cand, root)); break

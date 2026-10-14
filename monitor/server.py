@@ -418,6 +418,8 @@ def load_runs():
         except OSError:
             r["compare"] = None
         for o in allo:
+            if config.sidecar_output(o):
+                continue
             if o in coll and os.path.isfile(p := os.path.join(lr, coll[o])):
                 r["images"].append(image_entry(r, o, p, "local", coll[o]))
             elif (p := locate(root, o)):
